@@ -1,0 +1,1063 @@
+package nafzh.manager;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Vector;
+import java.text.NumberFormat; // <-- إضافة مهمة
+import java.text.ParseException; // <-- إضافة مهمة
+import java.util.Locale; 
+
+
+public class DatabaseManager {
+
+    private static final String URL = "jdbc:sqlite:inventory.db";
+    private Connection conn = null;
+
+    public static class Customer {
+        public final int id;
+        public final String name;
+        public final double balance; // Added balance for payment logic
+
+        // Constructor for basic usage (dropdowns)
+        public Customer(int id, String name) {
+            this(id, name, 0.0);
+        }
+
+        // Full constructor
+        public Customer(int id, String name, double balance) {
+            this.id = id;
+            this.name = name;
+            this.balance = balance;
+        }
+
+        @Override
+        public String toString() {
+            return this.name;
+        }
+    }
+        
+    public static class Installment {
+        public final int id;
+        public final int saleId;
+        public final String customerName; // مضاف للتوافق مع الجدول
+        public final double amount;
+        public final String dueDate;
+        public final String paymentDate; // مضاف لعرض تاريخ السداد الفعلي
+        public final boolean isPaid;
+
+        public Installment(int id, int saleId, String customerName, double amount, String dueDate, String paymentDate, boolean isPaid) {
+            this.id = id;
+            this.saleId = saleId;
+            this.customerName = customerName;
+            this.amount = amount;
+            this.dueDate = dueDate;
+            this.paymentDate = (paymentDate == null || paymentDate.isEmpty()) ? "-" : paymentDate;
+            this.isPaid = isPaid;
+        }
+    }
+       
+    public static class ProductForPOS {
+        public final int id;
+        public final String name;
+        public final String unit;
+        public final double salePrice;
+        public final int currentQuantity;
+
+        public ProductForPOS(int id, String name, String unit, double salePrice, int currentQuantity) {
+            this.id = id;
+            this.name = name;
+            this.unit = unit;
+            this.salePrice = salePrice;
+            this.currentQuantity = currentQuantity;
+        }
+    }
+
+    public DatabaseManager() {
+        connect();
+        createNewTables();
+        addStatusColumnIfMissing();
+    }
+
+    public void connect() {
+        try {
+            Class.forName("org.sqlite.JDBC");
+            conn = DriverManager.getConnection(URL);
+        } catch (SQLException | ClassNotFoundException e) {
+            System.err.println("Database Connection Error: " + e.getMessage());
+        }
+    }
+
+    public static Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(URL);
+    }
+
+    public void createNewTables() {
+        String[] sqlCommands = {
+            // جدول المنتجات
+            "CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, category TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'قطعة', current_quantity INTEGER NOT NULL DEFAULT 0, purchase_price REAL NOT NULL DEFAULT 0.0, sale_price REAL NOT NULL DEFAULT 0.0);",
+            
+            // جدول المبيعات
+            "CREATE TABLE IF NOT EXISTS Sales (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_date TEXT NOT NULL, customer_id INTEGER, customer_name TEXT, total_amount REAL NOT NULL, amount_paid REAL DEFAULT 0.0, FOREIGN KEY(customer_id) REFERENCES customers(id));",
+            
+            // جدول أصناف المبيعات
+            "CREATE TABLE IF NOT EXISTS sale_items (sale_id INTEGER, product_id INTEGER, product_name TEXT, product_unit TEXT, quantity INTEGER NOT NULL, sale_price REAL NOT NULL, subtotal REAL NOT NULL, PRIMARY KEY (sale_id, product_id), FOREIGN KEY (sale_id) REFERENCES sales(id), FOREIGN KEY (product_id) REFERENCES products(id));",
+            
+            // جدول الفئات
+            "CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, category_name TEXT NOT NULL UNIQUE);",
+            
+            // جدول العملاء
+            "CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, address TEXT, phone TEXT, balance REAL DEFAULT 0.0, transaction_count INTEGER DEFAULT 0, status INTEGER DEFAULT 1);", 
+            
+            // جدول الوحدات
+            "CREATE TABLE IF NOT EXISTS units (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE);",
+        
+            // جدول الأقساط
+            "CREATE TABLE IF NOT EXISTS installments (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER, customer_id INTEGER, due_date TEXT, payment_date TEXT, amount REAL, is_paid INTEGER DEFAULT 0, FOREIGN KEY(sale_id) REFERENCES sales(id), FOREIGN KEY(customer_id) REFERENCES customers(id));",
+
+            // --- التعديل الجديد: جدول المستخدمين ---
+            "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password TEXT NOT NULL, role TEXT DEFAULT 'user');",
+        
+            "CREATE TABLE IF NOT EXISTS app_settings (id INTEGER PRIMARY KEY CHECK (id = 1), company_name TEXT, slogan TEXT, phone1 TEXT, phone2 TEXT, salesman TEXT, logo BLOB);"
+    
+        
+        };
+
+        try (Statement stmt = conn.createStatement()) {
+            for(String sql : sqlCommands) stmt.execute(sql);
+            System.out.println("تم التأكد من سلامة الجداول وإنشاؤها بالتعديلات الجديدة.");
+        } catch (SQLException e) { 
+            System.err.println("Error creating tables: " + e.getMessage()); 
+        }
+    }
+
+    private void ensureColumnsExist() {
+        try (Statement stmt = conn.createStatement()) {
+            // إضافة عمود paid_amount لجدول المبيعات إذا لم يكن موجوداً stmt.execute("ALTER TABLE sales ADD COLUMN paid_amount REAL DEFAULT 0") ;
+            System.out.println("[تتبع] تم فحص وتحديث أعمدة قاعدة البيانات.") ;
+        }
+        catch (SQLException e) {
+            // نتجاهل الخطأ إذا كان العمود موجوداً بالفعل if (!e.getMessage().contains("duplicate column name")) {
+                System.err.println("تنبيه عند تحديث الجداول: " + e.getMessage()) ;
+            }
+        }
+   
+    public double getTotalUnpaidInstallments() {
+        String sql = "SELECT SUM(amount) FROM installments WHERE is_paid = 0";
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) return rs.getDouble(1);
+        } catch (SQLException e) {
+            System.err.println("Error fetching total unpaid installments: " + e.getMessage());
+        }
+        return 0.0;
+    }
+  
+    public boolean markInstallmentAsPaid(int installmentId) {
+        String today = LocalDate.now().toString();
+        String sql = "UPDATE installments SET is_paid = 1, payment_date = ? WHERE id = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, today);
+            pstmt.setInt(2, installmentId);
+            return pstmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.err.println("Error updating installment status: " + e.getMessage());
+            return false;
+        }
+    }
+   
+    public boolean updateInstallmentStatus(int installmentId, String paymentDate, boolean newIsPaid) {
+    String selectSql = "SELECT customer_id, amount, is_paid FROM installments WHERE id = ?";
+    String updateInstSql = "UPDATE installments SET payment_date = ?, is_paid = ? WHERE id = ?";
+    String updateCustomerSql = "UPDATE customers SET balance = balance + ? WHERE id = ?";
+
+    try {
+        conn.setAutoCommit(false); // مهم جداً لضمان تناسق البيانات
+
+        int customerId = -1;
+        double amount = 0;
+        boolean oldIsPaid = false;
+
+        // 1. جلب البيانات الحالية للقسط
+        try (PreparedStatement ps = conn.prepareStatement(selectSql)) {
+            ps.setInt(1, installmentId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    customerId = rs.getInt("customer_id");
+                    amount = rs.getDouble("amount");
+                    oldIsPaid = rs.getInt("is_paid") == 1;
+                } else {
+                    return false; // القسط غير موجود
+                }
+            }
+        }
+
+        // إذا لم تتغير الحالة، لا نفعل شيئاً سوى تحديث التاريخ ربما
+        if (oldIsPaid == newIsPaid) {
+             // تحديث التاريخ فقط
+            try (PreparedStatement ps = conn.prepareStatement(updateInstSql)) {
+                ps.setString(1, paymentDate);
+                ps.setInt(2, newIsPaid ? 1 : 0);
+                ps.setInt(3, installmentId);
+                ps.executeUpdate();
+            }
+            conn.commit();
+            conn.setAutoCommit(true);
+            return true;
+        }
+
+        // 2. تحديث جدول الأقساط
+        try (PreparedStatement ps = conn.prepareStatement(updateInstSql)) {
+            ps.setString(1, paymentDate);
+            ps.setInt(2, newIsPaid ? 1 : 0);
+            ps.setInt(3, installmentId);
+            ps.executeUpdate();
+        }
+
+        // 3. تحديث رصيد العميل (أخطر خطوة)
+        // الرصيد الموجب = دين على العميل
+        // إذا سدد (Unpaid -> Paid) : نقلل الرصيد (-amount)
+        // إذا ألغى السداد (Paid -> Unpaid) : نعيد الدين (+amount)
+        double balanceChange = 0;
+        if (!oldIsPaid && newIsPaid) {
+            balanceChange = -amount; // سداد
+        } else if (oldIsPaid && !newIsPaid) {
+            balanceChange = amount;  // تراجع عن السداد
+        }
+
+        if (customerId != -1 && balanceChange != 0) {
+            try (PreparedStatement ps = conn.prepareStatement(updateCustomerSql)) {
+                ps.setDouble(1, balanceChange);
+                ps.setInt(2, customerId);
+                ps.executeUpdate();
+            }
+        }
+
+        conn.commit();
+        return true;
+
+    } catch (SQLException e) {
+        try { conn.rollback(); } catch (SQLException ex) {}
+        System.err.println("Error updating installment status: " + e.getMessage());
+        return false;
+    } finally {
+        try { conn.setAutoCommit(true); } catch (SQLException e) {}
+    }
+}
+
+    public boolean saveInstallmentSale(int customerId, double totalAmount, double downPayment, Map<Integer, Integer> cartItems, List<Object[]> installments) {
+    String saleSql = "INSERT INTO Sales (customer_id, customer_name, total_amount, amount_paid, sale_date) VALUES (?, ?, ?, ?, ?)";
+    // تم تعديل ترتيب الأعمدة هنا ليكون مطابقًا للترتيب في الواجهة
+    String instSql = "INSERT INTO installments (sale_id, customer_id, due_date, amount, payment_date, is_paid) VALUES (?, ?, ?, ?, ?, ?)";
+    String updateStockSql = "UPDATE products SET current_quantity = current_quantity - ? WHERE id = ?";
+    String itemSql = "INSERT INTO sale_items(sale_id, product_id, product_name, quantity, sale_price, subtotal, product_unit) VALUES(?, ?, ?, ?, ?, ?, ?)";
+    String updateCustomerSql = "UPDATE customers SET balance = balance + ? WHERE id = ?";
+    String customerNameSql = "SELECT name FROM customers WHERE id = ?";
+
+    try {
+        conn.setAutoCommit(false); // بدء المعاملة
+
+        // --- أ: جلب اسم العميل ---
+        String customerName = "عميل تقسيط";
+        if (customerId > 0) {
+            try (PreparedStatement pstmt = conn.prepareStatement(customerNameSql)) {
+                pstmt.setInt(1, customerId);
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    customerName = rs.getString("name");
+                }
+            }
+        }
+
+        // --- ب: حفظ رأس الفاتورة ---
+        int saleId;
+        try (PreparedStatement pstmt = conn.prepareStatement(saleSql, Statement.RETURN_GENERATED_KEYS)) {
+            pstmt.setInt(1, customerId);
+            pstmt.setString(2, customerName);
+            pstmt.setDouble(3, totalAmount);
+            pstmt.setDouble(4, downPayment);
+            pstmt.setString(5, LocalDate.now().toString());
+            pstmt.executeUpdate();
+            ResultSet rs = pstmt.getGeneratedKeys();
+            if (rs.next()) {
+                saleId = rs.getInt(1);
+            } else {
+                throw new SQLException("فشل في الحصول على رقم الفاتورة.");
+            }
+        }
+
+        // --- ج: حفظ الأصناف وتحديث المخزون ---
+        try (PreparedStatement itemPstmt = conn.prepareStatement(itemSql);
+             PreparedStatement stockPstmt = conn.prepareStatement(updateStockSql)) {
+            for (Map.Entry<Integer, Integer> entry : cartItems.entrySet()) {
+                int productId = entry.getKey();
+                int qty = entry.getValue();
+                ProductForPOS p = getProductByIdForPOS(productId);
+                if (p == null || p.currentQuantity < qty) throw new SQLException("الكمية غير كافية للمنتج: " + (p != null ? p.name : "ID " + productId));
+
+                double subtotal = p.salePrice * qty;
+                itemPstmt.setInt(1, saleId);
+                itemPstmt.setInt(2, p.id);
+                itemPstmt.setString(3, p.name);
+                itemPstmt.setInt(4, qty);
+                itemPstmt.setDouble(5, p.salePrice);
+                itemPstmt.setDouble(6, subtotal);
+                itemPstmt.setString(7, p.unit);
+                itemPstmt.addBatch();
+
+                stockPstmt.setInt(1, qty);
+                stockPstmt.setInt(2, productId);
+                stockPstmt.addBatch();
+            }
+            itemPstmt.executeBatch();
+            stockPstmt.executeBatch();
+        }
+
+        // --- د: حفظ الأقساط وحساب الدين ---
+        double totalDebtToAdd = 0.0;
+        try (PreparedStatement pstmt = conn.prepareStatement(instSql)) {
+            for (Object[] row : installments) {
+                pstmt.setInt(1, saleId);
+                pstmt.setInt(2, customerId);
+
+                // --- الترتيب الصحيح والنهائي للقراءة ---
+                // الآن الكود يقرأ البيانات بالترتيب الصحيح الذي أرسلناه
+                
+                // العنصر 1: تاريخ الاستحقاق
+                String dueDate = row[1].toString();
+                pstmt.setString(3, dueDate);
+
+                // العنصر 2: المبلغ
+                double amount = (double) row[2];
+                pstmt.setDouble(4, amount);
+                
+                // العنصر 3: تاريخ السداد
+                pstmt.setString(5, row[3].toString());
+                
+                // العنصر 4: حالة السداد
+                boolean isPaid = (boolean) row[4];
+                pstmt.setInt(6, isPaid ? 1 : 0);
+                
+                pstmt.addBatch();
+
+                if (!isPaid) {
+                    totalDebtToAdd += amount;
+                }
+            }
+            pstmt.executeBatch();
+        }
+
+        // --- هـ: تحديث مديونية العميل ---
+        if (customerId > 0 && totalDebtToAdd > 0) {
+            try (PreparedStatement pstmt = conn.prepareStatement(updateCustomerSql)) {
+                pstmt.setDouble(1, totalDebtToAdd);
+                pstmt.setInt(2, customerId);
+                pstmt.executeUpdate();
+            }
+        }
+
+        conn.commit(); // اعتماد كل العمليات
+        return true;
+
+    } catch (SQLException e) {
+        try {
+            if (conn != null) conn.rollback(); // التراجع عند الخطأ
+        } catch (SQLException ex) {
+            System.err.println("فشل التراجع عن العملية: " + ex.getMessage());
+        }
+        System.err.println("Error saving installment sale: " + e.getMessage());
+        e.printStackTrace();
+        return false;
+    } finally {
+        try {
+            if (conn != null) conn.setAutoCommit(true);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+    public boolean updateProductQuantity(int productId, int quantityChange) {
+    String sql = "UPDATE products SET quantity = quantity + ? WHERE id = ?" ;
+    try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        pstmt.setInt(1, quantityChange) ;
+        pstmt.setInt(2, productId) ;
+        return pstmt.executeUpdate() > 0 ;
+    }
+    catch (SQLException e) {
+        System.err.println("خطأ أثناء تحديث كمية المنتج: " + e.getMessage()) ;
+        return false ;
+    }
+}
+
+    private double getProductPrice(int productId) {
+        String sql = "SELECT sale_price FROM products WHERE id = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, productId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) return rs.getDouble("sale_price");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return 0.0;
+    }
+        
+    public boolean addProduct(String name, String category, String unit, int currentQuantity, double purchasePrice, double salePrice) {
+        String sql = "INSERT INTO products(name, category, unit, current_quantity, purchase_price, sale_price) VALUES(?,?,?,?,?,?)";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, name); pstmt.setString(2, category); pstmt.setString(3, unit);
+            pstmt.setInt(4, currentQuantity); pstmt.setDouble(5, purchasePrice); pstmt.setDouble(6, salePrice);
+            pstmt.executeUpdate();
+            return true;
+        } catch (SQLException e) { System.err.println("Error adding product: " + e.getMessage()); return false; }
+    }
+
+    public List<Map<String, Object>> getAllProducts() {
+        List<Map<String, Object>> productsList = new ArrayList<>();
+        String sql = "SELECT id, name, category, unit, current_quantity, purchase_price, sale_price FROM products ORDER BY category, id";
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                Map<String, Object> product = new HashMap<>();
+                product.put("id", rs.getInt("id")); product.put("name", rs.getString("name"));
+                product.put("category", rs.getString("category")); product.put("unit", rs.getString("unit"));
+                product.put("current_quantity", rs.getInt("current_quantity"));
+                product.put("purchase_price", rs.getDouble("purchase_price")); product.put("sale_price", rs.getDouble("sale_price"));
+                productsList.add(product);
+            }
+        } catch (SQLException e) { System.err.println("Error fetching all products: " + e.getMessage()); }
+        return productsList;
+    }
+
+    public String getProductUnit(int id) {
+        String sql = "SELECT unit FROM products WHERE id = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, id);
+            try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) return rs.getString("unit"); }
+        } catch (SQLException e) { System.err.println("Error fetching product unit: " + e.getMessage()); }
+        return "";
+    }
+
+    public boolean updateProduct(int id, String name, String category, String unit, int currentQuantity, double purchasePrice, double salePrice) {
+        String sql = "UPDATE products SET name = ?, category = ?, unit = ?, current_quantity = ?, purchase_price = ?, sale_price = ? WHERE id = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, name); pstmt.setString(2, category); pstmt.setString(3, unit);
+            pstmt.setInt(4, currentQuantity); pstmt.setDouble(5, purchasePrice); pstmt.setDouble(6, salePrice);
+            pstmt.setInt(7, id);
+            pstmt.executeUpdate();
+            return true;
+        } catch (SQLException e) { System.err.println("Error updating product: " + e.getMessage()); return false; }
+    }
+
+    public boolean deleteProduct(int id) {
+        String sql = "DELETE FROM products WHERE id = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, id);
+            return pstmt.executeUpdate() > 0;
+        } catch (SQLException e) { System.err.println("Error deleting product: " + e.getMessage()); return false; }
+    }
+
+    public boolean checkUserCredentials(String username, String password) {
+        String sql = "SELECT * FROM users WHERE username = ? AND password = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, username);
+            pstmt.setString(2, password); 
+            try (ResultSet rs = pstmt.executeQuery()) {
+                return rs.next(); // يرجع true إذا وجد مستخدم مطابق
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public boolean addUser(String username, String password, String role) {
+        String sql = "INSERT INTO users(username, password, role) VALUES(?, ?, ?)";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, username);
+            pstmt.setString(2, password);
+            pstmt.setString(3, role);
+            return pstmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.err.println("خطأ في إضافة المستخدم (قد يكون الاسم مكرر): " + e.getMessage());
+            return false;
+        }
+    }
+
+    public boolean isUsersTableEmpty() {
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM users")) {
+            if (rs.next()) {
+                return rs.getInt(1) == 0;
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return true;
+    }
+
+    public List<String[]> getAllUsers() {
+        List<String[]> users = new ArrayList<>();
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT id, username, role FROM users")) {
+            while (rs.next()) {
+                users.add(new String[]{
+                    String.valueOf(rs.getInt("id")),
+                    rs.getString("username"),
+                    rs.getString("role")
+                });
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return users;
+    }
+
+    public boolean deleteUser(int id) {
+        try (PreparedStatement pstmt = conn.prepareStatement("DELETE FROM users WHERE id = ?")) {
+            pstmt.setInt(1, id);
+            return pstmt.executeUpdate() > 0;
+        } catch (SQLException e) { return false; }
+    }
+
+    public int getLowStockCount() {
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery("SELECT COUNT(id) FROM products WHERE current_quantity <= 5 AND current_quantity > 0")) {
+            if (rs.next()) return rs.getInt(1);
+        } catch (SQLException e) { System.err.println("Error getting low stock count: " + e.getMessage()); }
+        return 0;
+    }
+
+    public int getProductCount() {
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery("SELECT COUNT(id) FROM products")) {
+            if (rs.next()) return rs.getInt(1);
+        } catch (SQLException e) { System.err.println("Error getting product count: " + e.getMessage()); }
+        return 0;
+    }
+
+    public double getTotalSalesByDate(String date) {
+        String sql = "SELECT SUM(total_amount) FROM Sales WHERE sale_date = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, date);
+            try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) return rs.getDouble(1); }
+        } catch (SQLException e) { System.err.println("Error getting total sales by date: " + e.getMessage()); }
+        return 0.0;
+    }
+
+    public List<List<Object>> getAllSaleTransactions() {
+        List<List<Object>> list = new ArrayList<>();
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery("SELECT id, sale_date, customer_name, total_amount FROM Sales ORDER BY id DESC")) {
+            while (rs.next()) list.add(Arrays.asList(rs.getInt("id"), rs.getString("sale_date"), rs.getString("customer_name"), rs.getDouble("total_amount")));
+        } catch (SQLException e) { System.err.println("Error fetching all sale transactions: " + e.getMessage()); }
+        return list;
+    }
+
+    public List<Object> getSaleDetails(int saleId) {
+        String sql = "SELECT s.id, s.sale_date, s.customer_id, s.customer_name, s.total_amount, s.amount_paid, c.balance " +
+                     "FROM Sales s " +
+                     "LEFT JOIN customers c ON s.customer_id = c.id " +
+                     "WHERE s.id = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, saleId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    return Arrays.asList(
+                        rs.getInt("id"), 
+                        rs.getString("sale_date"), 
+                        rs.getString("customer_name"), 
+                        rs.getInt("customer_id"), 
+                        rs.getDouble("total_amount"), 
+                        "مندوب المبيعات", 
+                        rs.getDouble("amount_paid"), // New field
+                        rs.getDouble("balance")      // Customer Balance
+                    );
+                }
+            }
+        } catch (SQLException e) { System.err.println("Error fetching sale header details: " + e.getMessage()); }
+        return null;
+    }
+
+    public double getCustomerPriorBalance(int customerId) {
+        String sql = "SELECT balance FROM customers WHERE id = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, customerId);
+            try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) return rs.getDouble("balance"); }
+        } catch (SQLException e) { System.err.println("Error fetching customer balance: " + e.getMessage()); }
+        return 0.0;
+    }
+
+    public List<List<Object>> getSaleItems(int saleId) {
+        List<List<Object>> items = new ArrayList<>();
+        String sql = "SELECT product_name, product_unit, quantity, sale_price, subtotal FROM sale_items WHERE sale_id = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, saleId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) items.add(Arrays.asList(rs.getString("product_name"), rs.getString("product_unit"), rs.getInt("quantity"), rs.getDouble("sale_price"), rs.getDouble("subtotal")));
+            }
+        } catch (SQLException e) { System.err.println("Error fetching sale items: " + e.getMessage()); }
+        return items;
+    }
+
+    public ProductForPOS getProductByIdForPOS(int productId) {
+        String sql = "SELECT id, name, unit, sale_price, current_quantity FROM products WHERE id = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, productId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) return new ProductForPOS(rs.getInt("id"), rs.getString("name"), rs.getString("unit"), rs.getDouble("sale_price"), rs.getInt("current_quantity"));
+            }
+        } catch (SQLException e) { System.err.println("Error fetching product by ID: " + e.getMessage()); }
+        return null;
+    }
+
+    public List<ProductForPOS> getProductsByName(String partialName) {
+        List<ProductForPOS> products = new ArrayList<>();
+        String sql = "SELECT id, name, unit, sale_price, current_quantity FROM products WHERE name LIKE ? ORDER BY name";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, partialName + "%");
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) products.add(new ProductForPOS(rs.getInt("id"), rs.getString("name"), rs.getString("unit"), rs.getDouble("sale_price"), rs.getInt("current_quantity")));
+            }
+        } catch (SQLException e) { System.err.println("Error fetching products by name: " + e.getMessage()); }
+        return products;
+    }
+
+    public int addSaleTransaction(int customerId, String customerName, double totalAmount, double amountPaid, Map<Integer, Integer> cartItems) {
+        int saleId = -1;
+        String saleDate = LocalDate.now().format(DateTimeFormatter.ISO_DATE);
+        
+        // تم التعديل لإضافة amount_paid
+        String sqlSale = "INSERT INTO Sales(sale_date, customer_id, customer_name, total_amount, amount_paid) VALUES(?, ?, ?, ?, ?)";
+
+        try {
+            conn.setAutoCommit(false); // Begin Transaction
+
+            // 1. Insert Sale Record
+            try (PreparedStatement pstmtSale = conn.prepareStatement(sqlSale, Statement.RETURN_GENERATED_KEYS)) {
+                pstmtSale.setString(1, saleDate);
+                if (customerId == -1) pstmtSale.setNull(2, java.sql.Types.INTEGER);
+                else pstmtSale.setInt(2, customerId);
+                pstmtSale.setString(3, customerName);
+                pstmtSale.setDouble(4, totalAmount);
+                pstmtSale.setDouble(5, amountPaid); // New
+                
+                pstmtSale.executeUpdate();
+                try (ResultSet rs = pstmtSale.getGeneratedKeys()) {
+                    if (rs.next()) saleId = rs.getInt(1);
+                }
+            }
+            if (saleId == -1) throw new SQLException("Failed to create sale, no ID obtained.");
+
+            String sqlItem = "INSERT INTO sale_items(sale_id, product_id, product_name, quantity, sale_price, subtotal, product_unit) VALUES(?, ?, ?, ?, ?, ?, ?)";
+            String sqlUpdateStock = "UPDATE products SET current_quantity = current_quantity - ? WHERE id = ?";
+
+            try (PreparedStatement pstmtItem = conn.prepareStatement(sqlItem); PreparedStatement pstmtUpdateStock = conn.prepareStatement(sqlUpdateStock)) {
+                for (Map.Entry<Integer, Integer> entry : cartItems.entrySet()) {
+                    int productId = entry.getKey();
+                    int quantitySold = entry.getValue();
+                    ProductForPOS p = getProductByIdForPOS(productId);
+                    if (p == null || p.currentQuantity < quantitySold) throw new SQLException("Stock not available for product ID: " + productId);
+
+                    // Insert Item
+                    pstmtItem.setInt(1, saleId);
+                    pstmtItem.setInt(2, p.id);
+                    pstmtItem.setString(3, p.name);
+                    pstmtItem.setInt(4, quantitySold);
+                    pstmtItem.setDouble(5, p.salePrice);
+                    pstmtItem.setDouble(6, p.salePrice * quantitySold);
+                    pstmtItem.setString(7, p.unit);
+                    pstmtItem.addBatch();
+
+                    // Update Stock
+                    pstmtUpdateStock.setInt(1, quantitySold);
+                    pstmtUpdateStock.setInt(2, p.id);
+                    pstmtUpdateStock.addBatch();
+                }
+                pstmtItem.executeBatch();
+                pstmtUpdateStock.executeBatch();
+            }
+            
+            // 2. Update Customer Balance if needed (New Logic)
+            if (customerId != -1) {
+                double remaining = totalAmount - amountPaid;
+                if (remaining != 0 || totalAmount > 0) {
+                     // Add the remaining debt (or credit) to the customer balance
+                     // balance = balance + (total - paid)
+                     String updateBalanceSql = "UPDATE customers SET balance = balance + ? WHERE id = ?";
+                     try(PreparedStatement psBalance = conn.prepareStatement(updateBalanceSql)) {
+                         psBalance.setDouble(1, remaining);
+                         psBalance.setInt(2, customerId);
+                         psBalance.executeUpdate();
+                     }
+                }
+            }
+
+            conn.commit(); // Commit Transaction
+
+        } catch (SQLException e) {
+            System.err.println("Transaction failed: " + e.getMessage());
+            try { if (conn != null) conn.rollback(); } catch (SQLException ex) { System.err.println("Rollback failed: " + ex.getMessage()); }
+            return -1;
+        } finally {
+            try { if (conn != null) conn.setAutoCommit(true); } catch (SQLException e) { System.err.println("Error resetting auto-commit: " + e.getMessage()); }
+        }
+        return saleId;
+    }
+    
+    public int addSaleTransaction(int customerId, String customerName, double totalAmount, Map<Integer, Integer> cartItems) {
+        return addSaleTransaction(customerId, customerName, totalAmount, totalAmount, cartItems);
+    }
+    
+    public boolean registerNewPayment(int saleId, double paymentAmount) {
+         String getSaleSql = "SELECT customer_id, total_amount, amount_paid FROM Sales WHERE id = ?";
+         String updateSaleSql = "UPDATE Sales SET amount_paid = amount_paid + ? WHERE id = ?";
+         String updateCustomerSql = "UPDATE customers SET balance = balance - ? WHERE id = ?";
+         
+         try {
+             conn.setAutoCommit(false);
+             
+             int customerId = -1;
+             try(PreparedStatement ps = conn.prepareStatement(getSaleSql)) {
+                 ps.setInt(1, saleId);
+                 try(ResultSet rs = ps.executeQuery()) {
+                     if(rs.next()) {
+                         customerId = rs.getInt("customer_id");
+                         if(rs.wasNull()) customerId = -1;
+                     } else {
+                         throw new SQLException("Sale not found");
+                     }
+                 }
+             }
+             
+             // Update Sale
+             try(PreparedStatement ps = conn.prepareStatement(updateSaleSql)) {
+                 ps.setDouble(1, paymentAmount);
+                 ps.setInt(2, saleId);
+                 ps.executeUpdate();
+             }
+             
+             // Update Customer Balance
+             if(customerId != -1) {
+                 try(PreparedStatement ps = conn.prepareStatement(updateCustomerSql)) {
+                     ps.setDouble(1, paymentAmount); // Reduce debt
+                     ps.setInt(2, customerId);
+                     ps.executeUpdate();
+                 }
+             }
+             
+             conn.commit();
+             return true;
+         } catch(SQLException e) {
+             try { conn.rollback(); } catch(SQLException ex) {}
+             e.printStackTrace();
+             return false;
+         } finally {
+             try { conn.setAutoCommit(true); } catch(SQLException e) {}
+         }
+    }
+
+    public Vector<String> getAllCategories() {
+        Vector<String> cats = new Vector<>();
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery("SELECT category_name FROM categories ORDER BY category_name")) {
+            while (rs.next()) cats.add(rs.getString("category_name"));
+        } catch (SQLException e) { System.err.println("Error fetching categories: " + e.getMessage()); }
+        return cats;
+    }
+
+    public boolean addCategory(String categoryName) {
+        try (PreparedStatement pstmt = conn.prepareStatement("INSERT INTO categories(category_name) VALUES(?)")) {
+            pstmt.setString(1, categoryName);
+            return pstmt.executeUpdate() > 0;
+        } catch (SQLException e) { return false; }
+    }
+
+    public boolean deleteCategory(String categoryName) {
+        try (PreparedStatement pstmt = conn.prepareStatement("DELETE FROM categories WHERE category_name = ?")) {
+            pstmt.setString(1, categoryName);
+            return pstmt.executeUpdate() > 0;
+        } catch (SQLException e) { return false; }
+    }
+
+    public Vector<String> getAllUnits() {
+        Vector<String> units = new Vector<>();
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery("SELECT name FROM units ORDER BY name")) {
+            while (rs.next()) units.add(rs.getString("name"));
+        } catch (SQLException e) { System.err.println("Error fetching units: " + e.getMessage()); }
+        return units;
+    }
+
+    public List<Customer> getCustomersForPOS() {
+    List<Customer> customers = new ArrayList<>();
+    // --- بداية التعديل ---
+    // إضافة شرط "WHERE status = 1" لجلب العملاء النشطين فقط
+    try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery("SELECT id, name, balance FROM customers WHERE status = 1 ORDER BY name ASC")) {
+    // --- نهاية التعديل ---
+        while (rs.next()) customers.add(new Customer(rs.getInt("id"), rs.getString("name"), rs.getDouble("balance")));
+    } catch (SQLException e) { 
+        System.err.println("Error fetching customers for POS: " + e.getMessage()); 
+    }
+    return customers;
+}
+
+    public List<Map<String, Object>> getAllCustomersWithStatus() {
+    List<Map<String, Object>> list = new ArrayList<>();
+    // تم استخدام استعلام يجلب كل الأعمدة بما في ذلك عمود "status"
+    String sql = "SELECT id, name, address, phone, balance, transaction_count, status FROM customers ORDER BY id DESC";
+    try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
+        while (rs.next()) {
+            Map<String, Object> c = new HashMap<>();
+            c.put("id", rs.getInt("id")); 
+            c.put("name", rs.getString("name"));
+            c.put("address", rs.getString("address")); 
+            c.put("phone", rs.getString("phone"));
+            c.put("balance", rs.getDouble("balance")); 
+            c.put("transaction_count", rs.getInt("transaction_count"));
+            // إضافة الحالة إلى البيانات المجلوبة
+            c.put("status", rs.getInt("status")); 
+            list.add(c);
+        }
+    } catch (SQLException e) { 
+        System.err.println("Error fetching all customers with status: " + e.getMessage()); 
+    }
+    return list;
+}
+
+    public List<Map<String, Object>> getAllCustomers() {
+    // أصبحت الآن تستدعي الدالة الجديدة لضمان توحيد مصدر البيانات
+    return getAllCustomersWithStatus(); 
+}
+
+    public void addStatusColumnIfMissing() {
+        String sql = "ALTER TABLE customers ADD COLUMN status INTEGER DEFAULT 1";
+        try (Statement stmt = conn.createStatement()) {
+            stmt.execute(sql);
+            System.out.println("تم إضافة عمود status بنجاح.");
+        } catch (SQLException e) {
+            // إذا كان العمود موجوداً بالفعل، سيحدث خطأ وسنتجاهله
+            if (!e.getMessage().contains("duplicate column name")) {
+                System.err.println("ملاحظة: " + e.getMessage());
+            }
+        }
+    }
+    
+    public boolean addCustomer(String name, String address, String phone, double balance, int count) {
+    // --- بداية التعديل ---
+    // تم تعديل الاستعلام ليشمل عمود "status" ويعطيه القيمة 1 (نشط) بشكل افتراضي
+    String sql = "INSERT INTO customers(name, address, phone, balance, transaction_count, status) VALUES(?,?,?,?,?,1)" ;
+    // --- نهاية التعديل ---
+    try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        pstmt.setString(1, name) ;
+        pstmt.setString(2, address) ;
+        pstmt.setString(3, phone) ;
+        pstmt.setDouble(4, balance) ;
+        pstmt.setInt(5, count) ;
+        return pstmt.executeUpdate() > 0 ;
+    }
+    catch (SQLException e) {
+        e.printStackTrace() ;
+        return false ;
+    }
+}
+ 
+    public boolean updateCustomer(int id, String name, String address, String phone, double balance) {
+        String sql = "UPDATE customers SET name=?, address=?, phone=?, balance=? WHERE id=?" ;
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, name) ;
+            pstmt.setString(2, address) ;
+            pstmt.setString(3, phone) ;
+            pstmt.setDouble(4, balance) ;
+            pstmt.setInt(5, id) ;
+            return pstmt.executeUpdate() > 0 ;
+        }
+        catch (SQLException e) {
+            e.printStackTrace() ;
+            return false ;
+        }
+    }
+    
+    public void updateCustomerStatus(int customerId, int status) {
+    String sql = "UPDATE customers SET status = ? WHERE id = ?";
+    try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        pstmt.setInt(1, status);
+        pstmt.setInt(2, customerId);
+        pstmt.executeUpdate();
+    } catch (SQLException e) {
+        System.err.println("Error updating customer status: " + e.getMessage());
+    }
+}
+
+    public boolean toggleAllCustomerStatuses() {
+    // استعلام ذكي لعكس الحالة: 1 يصبح 0، و 0 يصبح 1
+    String sql = "UPDATE customers SET status = 1 - status"; 
+    try (Statement stmt = conn.createStatement()) {
+        stmt.executeUpdate(sql);
+        return true;
+    } catch (SQLException e) {
+        System.err.println("Error toggling all customer statuses: " + e.getMessage());
+        return false;
+    }
+}
+  
+    public boolean deleteCustomer(int id) {
+        String sql = "DELETE FROM customers WHERE id=?" ;
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, id) ;
+            return pstmt.executeUpdate() > 0 ;
+        }
+        catch (SQLException e) {
+            e.printStackTrace() ;
+            return false ;
+        }
+    }
+    
+    public boolean isCustomerNameExists(String name) {
+        try (PreparedStatement pstmt = conn.prepareStatement("SELECT 1 FROM customers WHERE name = ? LIMIT 1")) {
+            pstmt.setString(1, name);
+            try (ResultSet rs = pstmt.executeQuery()) { return rs.next(); }
+        } catch (SQLException e) { System.err.println("Error checking customer name existence: " + e.getMessage()); }
+        return false;
+    }
+
+    public void close() {
+        try { if (conn != null) conn.close(); } catch (SQLException e) { System.err.println("Error closing connection: " + e.getMessage()); }
+    }
+    
+    private void checkAndCreateTables() {
+        try (Statement stmt = conn.createStatement()) {
+            // إنشاء الجداول الأساسية إذا لم تكن موجودة
+            stmt.execute("CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)");
+            stmt.execute("CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, category_id INTEGER, price REAL, stock INTEGER, unit TEXT, FOREIGN KEY(category_id) REFERENCES categories(id))");
+            stmt.execute("CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, address TEXT, phone TEXT, balance REAL DEFAULT 0)");
+            stmt.execute("CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, total_amount REAL, discount REAL, final_amount REAL, paid_amount REAL, remaining_amount REAL, sale_date TEXT, FOREIGN KEY(customer_id) REFERENCES customers(id))");
+            stmt.execute("CREATE TABLE IF NOT EXISTS sale_details (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER, product_id INTEGER, quantity INTEGER, price REAL, total REAL, FOREIGN KEY(sale_id) REFERENCES sales(id), FOREIGN KEY(product_id) REFERENCES products(id))");
+            stmt.execute("CREATE TABLE IF NOT EXISTS installments (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER, customer_id INTEGER, amount REAL, due_date TEXT, payment_date TEXT, is_paid INTEGER DEFAULT 0, FOREIGN KEY(sale_id) REFERENCES sales(id), FOREIGN KEY(customer_id) REFERENCES customers(id))");
+            stmt.execute("CREATE TABLE IF NOT EXISTS inventory_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER, change_amount INTEGER, type TEXT, reason TEXT, log_date TEXT, FOREIGN KEY(product_id) REFERENCES products(id))");
+
+            // --- التعديل التراكمي: إضافة عمود status لجدول العملاء إذا لم يكن موجوداً ---
+            try {
+                stmt.execute("ALTER TABLE customers ADD COLUMN status INTEGER DEFAULT 1");
+                System.out.println("تم إضافة عمود status لجدول العملاء بنجاح.");
+            } catch (SQLException e) {
+                // إذا كان العمود موجوداً بالفعل سيحدث خطأ، نتجاهله ببساطة
+            }
+            
+            System.out.println("تم التأكد من سلامة الجداول وإنشاؤها بالتعديلات الجديدة.");
+        } catch (SQLException e) {
+            System.err.println("Error creating tables: " + e.getMessage());
+        }
+    }
+    
+    public List<Customer> getAllCustomersForPOS() {
+    List<Customer> list = new ArrayList<>() ;
+    // --- بداية التعديل ---
+    // تم إضافة شرط "WHERE status = 1" هنا أيضًا
+    String sql = "SELECT id, name, balance FROM customers WHERE status = 1 ORDER BY name ASC" ;
+    // --- نهاية التعديل ---
+    try (Statement stmt = conn.createStatement() ;
+    ResultSet rs = stmt.executeQuery(sql)) {
+        while (rs.next()) {
+            list.add(new Customer( rs.getInt("id"), rs.getString("name"), rs.getDouble("balance") )) ;
+        }
+    }
+    catch (SQLException e) {
+        System.err.println("Error fetching customers for POS: " + e.getMessage()) ;
+    }
+    return list ;
+}
+    
+    public List<Installment> getAllInstallments() {
+        List<Installment> list = new ArrayList<>();
+        // استخدام أسماء الأعمدة الصريحة لتجنب تداخل البيانات
+        String sql = "SELECT i.id, i.sale_id, c.name as customer_name, i.amount, i.due_date, i.payment_date, i.is_paid " +
+                     "FROM installments i " +
+                     "JOIN customers c ON i.customer_id = c.id " +
+                     "ORDER BY i.due_date ASC";
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                list.add(new Installment(
+                    rs.getInt("id"),
+                    rs.getInt("sale_id"),
+                    rs.getString("customer_name"),
+                    rs.getDouble("amount"),
+                    rs.getString("due_date"), // هنا كان الخطأ، الآن سيقرأ التاريخ بشكل صحيح
+                    rs.getString("payment_date"),
+                    rs.getInt("is_paid") == 1
+                ));
+            }
+        } catch (SQLException e) {
+            System.err.println("Error fetching installments: " + e.getMessage());
+        }
+        return list;
+    }
+
+        // ... أضف هذا السطر داخل مصفوفة الجداول في دالة createNewTables ...
+
+
+       // الكلاس المحدث (يستقبل 6 متغيرات الآن)
+    public static class BusinessInfo {
+        public String name;
+        public String slogan;
+        public String phone1;
+        public String phone2;
+        public String salesman; // الحقل الجديد
+        public byte[] logoBytes;
+
+        // الكونستركتور المحدث
+        public BusinessInfo(String name, String slogan, String phone1, String phone2, String salesman, byte[] logoBytes) {
+            this.name = name;
+            this.slogan = slogan;
+            this.phone1 = phone1;
+            this.phone2 = phone2;
+            this.salesman = salesman; // تهيئة المتغير الجديد
+            this.logoBytes = logoBytes;
+        }
+    }
+
+
+        // 1. دالة الحفظ (المصححة)
+    public boolean saveBusinessInfo(String name, String slogan, String phone1, String phone2, String salesman, byte[] logoBytes) {
+        // تم إضافة salesman في أسماء الأعمدة والقيم
+        String sql = "REPLACE INTO app_settings (id, company_name, slogan, phone1, phone2, salesman, logo) VALUES (1, ?, ?, ?, ?, ?, ?)";
+        
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, name);
+            pstmt.setString(2, slogan);
+            pstmt.setString(3, phone1);
+            pstmt.setString(4, phone2);
+            pstmt.setString(5, salesman); // الآن المتغير ممرر وصحيح
+            pstmt.setBytes(6, logoBytes);
+            return pstmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    // 2. دالة الجلب (المصححة)
+    public BusinessInfo getBusinessInfo() {
+        String sql = "SELECT * FROM app_settings WHERE id = 1";
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                return new BusinessInfo(
+                    rs.getString("company_name"),
+                    rs.getString("slogan"),
+                    rs.getString("phone1"),
+                    rs.getString("phone2"),
+                    rs.getString("salesman"), // قراءة العمود الجديد
+                    rs.getBytes("logo")
+                );
+            }
+        } catch (SQLException e) { 
+            e.printStackTrace(); 
+        }
+        return null;
+    }
+
+    
+}

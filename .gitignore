@@ -1,0 +1,18 @@
+# NetBeans specific
+/build/
+/dist/
+/nbproject/private/
+/nbbuild/
+/nbdist/
+
+# Compiled files
+*.class
+*.jar
+
+# Database (هام جداً: عدم رفع قاعدة البيانات لحماية البيانات وتجنب حجم الملف الكبير)
+*.db
+*.sqlite
+inventory.db
+
+# Logs & Temp files
+*.log
