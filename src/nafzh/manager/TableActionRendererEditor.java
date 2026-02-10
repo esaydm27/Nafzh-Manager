@@ -77,48 +77,64 @@ public class TableActionRendererEditor extends AbstractCellEditor implements Tab
 
     // داخل كلاس TableActionRendererEditor.java
 
-@Override
-public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
-    Object idValue = table.getValueAt(row, 1);
-    
-    // شرط فحص الصفوف الفارغة (عناوين الفئات)
-    if (idValue == null || idValue.toString().trim().isEmpty()) {
-        JLabel emptyLabel = new JLabel("");
-        emptyLabel.setOpaque(true);
-        emptyLabel.setBackground(table.getBackground());
-        // رسم حدود الشبكة باللون الموحد 170
-        emptyLabel.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 1, new Color(170, 170, 170)));
-        return emptyLabel;
-    }
-    
-    panel.setVisible(true);
-    updatePanelBackground(isSelected);
-    // إضافة حدود للوحة الأزرار لتوحيد الشبكة باللون 170
-    panel.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 1, new Color(170, 170, 170)));
-    return panel;
-}
+    // استبدل getTableCellRendererComponent ودالة updatePanelBackground في TableActionRendererEditor.java
 
-@Override
-public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected, int row, int column) {
-    this.selectedRow = row;
-    Object idValue = table.getValueAt(row, 1);
-    
-    if (idValue == null || idValue.toString().isEmpty()) {
-        return new JLabel(""); 
-    }
-    
-    panel.setVisible(true);
-    updatePanelBackground(true);
-    return panel;
-}
+    @Override
+    public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+        // التحقق من نوع الصف (هل هو صف بيانات أم لا)
+        // في التصميم الجديد، كل الصفوف بها بيانات، لذا يمكننا تجاوز التحقق المعقد
+        // لكن للأمان، إذا كان الصف فارغاً تماماً:
+        if (value == null && table.getValueAt(row, 0) == null) {
+            JLabel emptyLabel = new JLabel("");
+            emptyLabel.setOpaque(true);
+            emptyLabel.setBackground(Color.WHITE);
+            // توحيد لون الشبكة (زيتوني)
+            emptyLabel.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 1, new Color(189, 195, 49)));
+            return emptyLabel;
+        }
 
-    private void updatePanelBackground(boolean isSelected) {
+        panel.setVisible(true);
+
+        // ضبط الخلفية: أبيض في العادي، ولون التحديد عند التحديد
         if (isSelected) {
             panel.setBackground(table.getSelectionBackground());
         } else {
-            panel.setBackground(table.getBackground());
+            panel.setBackground(Color.WHITE); // أبيض ناصع لتوحيد الخلفية
+        }
+
+        // إضافة حدود الشبكة الموحدة (زيتوني)
+        panel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(0, 0, 1, 1, new Color(189, 195, 49)), // الحدود الزيتونية
+            BorderFactory.createEmptyBorder(2, 5, 2, 5) // هوامش داخلية للأزرار
+        ));
+
+        return panel;
+    }
+
+    // دالة updatePanelBackground لم نعد بحاجة إليها بشكل منفصل، 
+    // أو يمكنك تعديلها لتكون هكذا إذا كانت مستخدمة في Editor أيضاً:
+    private void updatePanelBackground(boolean isSelected) {
+        if (isSelected) {
+            panel.setBackground(new Color(230, 240, 255)); // لون تحديد فاتح
+        } else {
+            panel.setBackground(Color.WHITE);
         }
     }
+
+    @Override
+    public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected, int row, int column) {
+        this.selectedRow = row;
+        Object idValue = table.getValueAt(row, 1);
+
+        if (idValue == null || idValue.toString().isEmpty()) {
+            return new JLabel(""); 
+        }
+
+        panel.setVisible(true);
+        updatePanelBackground(true);
+        return panel;
+    }
+
 
     @Override
     public Object getCellEditorValue() {

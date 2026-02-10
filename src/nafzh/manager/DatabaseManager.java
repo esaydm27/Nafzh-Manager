@@ -131,6 +131,21 @@ public class DatabaseManager {
         // إعدادات التطبيق
         "CREATE TABLE IF NOT EXISTS app_settings (id INTEGER PRIMARY KEY CHECK (id = 1), company_name TEXT, slogan TEXT, phone1 TEXT, phone2 TEXT, salesman TEXT, logo BLOB);"
     };
+    // داخل دالة createNewTables في DatabaseManager.java، بعد حلقة for الخاصة بالجداول:
+
+
+        // إضافة الوحدات الافتراضية
+        String[] defaultUnits = {"قطعة", "علبة", "باكيت", "كرتونة","دستة", "طقم", "شريط", "درزن", "ربطة", "زوج", "صندوق", "كيس", "لفة"};
+        try (Statement stmt = conn.createStatement()) {
+            for (String unit : defaultUnits) {
+                // نستخدم INSERT OR IGNORE لتجنب التكرار إذا كانت موجودة
+                stmt.execute("INSERT OR IGNORE INTO units (name) VALUES ('" + unit + "')");
+            }
+            System.out.println("تم إضافة الوحدات الافتراضية.");
+        } catch (SQLException e) {
+            System.err.println("خطأ في إضافة الوحدات: " + e.getMessage());
+        }
+
 
     try (Statement stmt = conn.createStatement()) {
         for(String sql : sqlCommands) stmt.execute(sql);

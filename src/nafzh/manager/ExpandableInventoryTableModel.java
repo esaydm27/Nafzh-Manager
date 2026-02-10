@@ -12,10 +12,6 @@ public class ExpandableInventoryTableModel extends AbstractTableModel {
     private List<Map<String, Object>> displayedRows;
     private final Map<String, Boolean> categoryExpandState;
     
-    // تم تحديث عدد الأعمدة ليتضمن عمود "الوحدة"
-    private static final int COLUMNS_COUNT = 8;
-    
-    // قائمة أسماء الأعمدة بالترتيب الجديد
     private static final String[] COLUMN_NAMES = {
         "الفئة", "ID", "اسم الصنف", "الوحدة", "الكمية الحالية", "سعر الشراء", "سعر البيع", "الإجراءات"
     };
@@ -27,22 +23,36 @@ public class ExpandableInventoryTableModel extends AbstractTableModel {
         buildDisplayedRows();
     }
     
-    // تقوم هذه الدالة بإنشاء الصفوف المعروضة بناءً على حالة الطي/التوسيع
-    private void buildDisplayedRows() {
+    private void initializeExpandState() {
+        for (Map<String, Object> product : originalProductsData) {
+            String category = (String) product.getOrDefault("category", "أخرى");
+            // الفئات مفتوحة افتراضياً
+            categoryExpandState.putIfAbsent(category, true);
+        }
+    }
+
+    public void buildDisplayedRows() {
         displayedRows = new ArrayList<>();
         Map<String, List<Map<String, Object>>> categorizedData = categorizeData(originalProductsData);
 
-        for (Map.Entry<String, List<Map<String, Object>>> entry : categorizedData.entrySet()) {
-            String category = entry.getKey();
-            List<Map<String, Object>> products = entry.getValue();
+        // ترتيب الفئات أبجدياً
+        List<String> sortedCategories = new ArrayList<>(categorizedData.keySet());
+        sortedCategories.sort(String::compareTo);
 
-            // إضافة صف الفئة الرئيسية
-            Map<String, Object> categoryRow = createCategoryRow(category, products.size());
-            displayedRows.add(categoryRow);
+        for (String category : sortedCategories) {
+            List<Map<String, Object>> products = categorizedData.get(category);
+            if (products == null || products.isEmpty()) continue;
 
-            // إضافة الأصناف إذا كانت الفئة موسعة (غير مطوية)
-            if (categoryExpandState.getOrDefault(category, true)) { // تم تغيير القيمة الافتراضية إلى true
-                displayedRows.addAll(products);
+            boolean isExpanded = categoryExpandState.getOrDefault(category, true);
+
+            // 1. دائماً نضيف المنتج الأول (ليدمج مع الفئة)
+            displayedRows.add(products.get(0));
+
+            // 2. إذا كانت الفئة مفتوحة (Expanded)، نضيف باقي المنتجات
+            if (isExpanded) {
+                for (int i = 1; i < products.size(); i++) {
+                    displayedRows.add(products.get(i));
+                }
             }
         }
         fireTableDataChanged();
@@ -57,52 +67,26 @@ public class ExpandableInventoryTableModel extends AbstractTableModel {
         return map;
     }
 
-    private Map<String, Object> createCategoryRow(String category, int count) {
-        Map<String, Object> row = new HashMap<>();
-        row.put("isCategory", true);
-        row.put("category", category);
-        row.put("count", count);
-        row.put("expanded", categoryExpandState.getOrDefault(category, true));
-        return row;
-    }
-
-    private void initializeExpandState() {
-        for (Map<String, Object> product : originalProductsData) {
-            String category = (String) product.getOrDefault("category", "أخرى");
-            categoryExpandState.putIfAbsent(category, true); // افتراض التوسع في البداية
-        }
-    }
-
     public void toggleExpandState(String category) {
-        boolean currentState = categoryExpandState.getOrDefault(category, false);
+        boolean currentState = categoryExpandState.getOrDefault(category, true);
         categoryExpandState.put(category, !currentState);
-        buildDisplayedRows(); // إعادة بناء الصفوف بعد التغيير
+        buildDisplayedRows(); // إعادة بناء الجدول لإظهار/إخفاء الصفوف
     }
 
-    // **********************************************
-    // ** الدالة المضافة لحل خطأ "cannot find symbol" **
-    // **********************************************
     public boolean isExpanded(String category) {
-        return categoryExpandState.getOrDefault(category, false);
-    }
-    // **********************************************
-
-    public boolean isCategoryRow(int rowIndex) {
-        if (rowIndex >= 0 && rowIndex < displayedRows.size()) {
-            return (boolean) displayedRows.get(rowIndex).getOrDefault("isCategory", false);
-        }
-        return false;
+        return categoryExpandState.getOrDefault(category, true);
     }
     
-    // دالة مساعدة لتمكين المُصيِّر من معرفة عدد الأصناف في الفئة (إذا لزم الأمر)
-    public int getCategoryCount(String category) {
-         return originalProductsData.stream()
-            .filter(p -> category.equals(p.getOrDefault("category", "أخرى")))
-            .toArray().length;
+    // هل يوجد منتجات أخرى في هذه الفئة؟ (لإظهار زر + أو -)
+    public boolean hasMoreProducts(String category) {
+        long count = originalProductsData.stream()
+                .filter(p -> category.equals(p.getOrDefault("category", "أخرى")))
+                .count();
+        return count > 1;
     }
 
     public Map<String, Object> getProductDataAt(int rowIndex) {
-        if (!isCategoryRow(rowIndex)) {
+        if (rowIndex >= 0 && rowIndex < displayedRows.size()) {
             return displayedRows.get(rowIndex);
         }
         return null;
@@ -110,10 +94,7 @@ public class ExpandableInventoryTableModel extends AbstractTableModel {
 
     public Integer getProductIdAt(int rowIndex) {
         Map<String, Object> product = getProductDataAt(rowIndex);
-        if (product != null) {
-            return (Integer) product.get("id");
-        }
-        return null;
+        return product != null ? (Integer) product.get("id") : null;
     }
 
     @Override
@@ -123,49 +104,34 @@ public class ExpandableInventoryTableModel extends AbstractTableModel {
 
     @Override
     public int getColumnCount() {
-        return COLUMNS_COUNT;
+        return COLUMN_NAMES.length;
     }
 
     @Override
     public String getColumnName(int column) {
-        if (column >= 0 && column < COLUMNS_COUNT) {
-            return COLUMN_NAMES[column];
-        }
-        return "";
+        return COLUMN_NAMES[column];
     }
 
     @Override
     public Object getValueAt(int rowIndex, int columnIndex) {
         Map<String, Object> rowData = displayedRows.get(rowIndex);
+        if (rowData == null) return null;
 
-        if (isCategoryRow(rowIndex)) {
-            if (columnIndex == 0) {
-                // تم تعديل هذا الجزء: العودة باسم الفئة فقط، ليتمكن الـ Cell Renderer من إضافة الأيقونة وحالة التوسيع/الطي.
-                return rowData.get("category"); 
-            }
-            return null; // لا يتم عرض أي بيانات في باقي الأعمدة لصفوف الفئات
-        }
-
-        // هنا يتم التعامل مع صفوف المنتجات (التي ليست فئات)
         switch (columnIndex) {
-            case 0: // الفئة
-                return rowData.get("category");
-            case 1: // ID
-                return rowData.get("id");
-            case 2: // اسم الصنف
-                return rowData.get("name");
-            case 3: // الوحدة - عمود جديد
-                return rowData.getOrDefault("unit", "---"); 
-            case 4: // الكمية الحالية
-                return rowData.get("current_quantity");
-            case 5: // سعر الشراء
-                return rowData.get("purchase_price");
-            case 6: // سعر البيع
-                return rowData.get("sale_price");
-            case 7: // الإجراءات (سيعرضها الـ Renderer)
-                return "Actions"; 
-            default:
-                return null;
+            case 0: return rowData.get("category");
+            case 1: return rowData.get("id");
+            case 2: return rowData.get("name");
+            case 3: return rowData.getOrDefault("unit", "---");
+            case 4: return rowData.get("current_quantity");
+            case 5: return rowData.get("purchase_price");
+            case 6: return rowData.get("sale_price");
+            case 7: return "Actions";
+            default: return null;
         }
+    }
+    
+    @Override
+    public boolean isCellEditable(int rowIndex, int columnIndex) {
+        return columnIndex == 7;
     }
 }
