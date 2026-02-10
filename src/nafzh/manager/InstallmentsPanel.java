@@ -40,123 +40,132 @@ public class InstallmentsPanel extends JPanel {
         loadInstallmentData();
     }
 
-    private void initializePanel() {
-        setLayout(new BorderLayout(10, 10));
-        setBorder(new EmptyBorder(15, 15, 15, 15));
-        setBackground(Color.WHITE);
+    // قم باستبدال دالة initializePanel الحالية بهذا الكود بالكامل
+private void initializePanel() {
+    setLayout(new BorderLayout(10, 10));
+    // التعديل 1: توحيد الهوامش لتطابق صفحة العملاء (20 بدلاً من 15)
+    setBorder(new EmptyBorder(20, 20, 20, 20));
+    setBackground(Color.WHITE);
+    setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
-        // --- الجزء العلوي ---
-        JPanel topPanel = new JPanel(new BorderLayout(10, 10));
-        topPanel.setOpaque(false);
+    // --- الجزء العلوي ---
+    JPanel topPanel = new JPanel(new BorderLayout(10, 10));
+    topPanel.setOpaque(false);
+    topPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
-        JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        searchPanel.setOpaque(false);
+    JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+    searchPanel.setOpaque(false);
+    searchPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
-        JLabel searchLabel = new JLabel("بحث باسم العميل:");
-        searchLabel.setFont(getCairoFont(14f));
-        
-        searchField = new JTextField(20);
-        searchField.setFont(getCairoFont(14f));
-        searchField.setHorizontalAlignment(JTextField.RIGHT);
-        searchField.addKeyListener(new KeyAdapter() {
-            @Override
-            public void keyReleased(KeyEvent e) {
-                applyFilters();
-            }
-        });
+    JLabel searchLabel = new JLabel("بحث باسم العميل:");
+    searchLabel.setFont(getCairoFont(14f));
+    
+    searchField = new JTextField(20);
+    searchField.setFont(getCairoFont(14f));
+    searchField.setHorizontalAlignment(JTextField.RIGHT);
+    searchField.addKeyListener(new KeyAdapter() {
+        @Override
+        public void keyReleased(KeyEvent e) {
+            applyFilters();
+        }
+    });
 
-        String[] filters = {
-            "الكل", "مستحق", "آتي", "----------------", "خالص", "متأخر", 
-            "مرتقب", "مقترب", "قادم", "مؤقت", "مرجأ", "مجدول", "منتظر"
-        };
-        filterStatusCombo = new JComboBox<>(filters);
-        filterStatusCombo.setFont(getCairoFont(12f));
-        filterStatusCombo.addActionListener(e -> applyFilters());
+    String[] filters = {
+        "الكل", "مستحق", "آتي", "خالص", "متأخر", 
+        "مرتقب", "مقترب", "قادم", "مؤقت", "مرجأ", "مجدول", "منتظر"
+    };
+    filterStatusCombo = new JComboBox<>(filters);
+    filterStatusCombo.setFont(getCairoFont(12f));
+    filterStatusCombo.addActionListener(e -> applyFilters());
 
-        searchPanel.add(filterStatusCombo);
-        searchPanel.add(new JLabel("  الحالة: "));
-        searchPanel.add(searchField);
-        searchPanel.add(searchLabel);
+    searchPanel.add(searchField);
+    searchPanel.add(searchLabel);
+    searchPanel.add(Box.createHorizontalStrut(15)); // مسافة فاصلة
+    searchPanel.add(filterStatusCombo);
+    searchPanel.add(new JLabel("  الحالة: "));
 
-        topPanel.add(searchPanel, BorderLayout.EAST);
-        add(topPanel, BorderLayout.NORTH);
+    topPanel.add(searchPanel, BorderLayout.EAST); // بما أن الاتجاه RTL، الـ EAST سيكون على اليمين
+    add(topPanel, BorderLayout.NORTH);
 
-        // --- الجدول ---
-        tableModel = new DefaultTableModel(COLUMN_NAMES, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false; 
-            }
-        };
+    // --- الجدول ---
+    tableModel = new DefaultTableModel(COLUMN_NAMES, 0) {
+        @Override
+        public boolean isCellEditable(int row, int column) {
+            return false; 
+        }
+    };
 
-        installmentsTable = new JTable(tableModel);
-        installmentsTable.setRowHeight(35);
-        installmentsTable.setFont(getCairoFont(12f));
-        installmentsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        installmentsTable.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        installmentsTable.setShowGrid(true); // إظهار الشبكة
-        installmentsTable.setGridColor(new Color(230, 230, 230));
+    installmentsTable = new JTable(tableModel);
+    installmentsTable.setRowHeight(35); // يمكنك جعلها 30 لتطابق العملاء تماماً
+    installmentsTable.setFont(getCairoFont(12f)); // يمكنك جعلها 11f لتطابق العملاء
+    installmentsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+    installmentsTable.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+    installmentsTable.setShowGrid(true); // إظهار الشبكة
+    
+    // التعديل 2: تغيير لون الشبكة إلى اللون الأخضر الزيتوني المستخدم في العملاء
+    installmentsTable.setGridColor(new Color(189, 195, 49)); 
+    // التعديل 2: إزالة المسافات بين الخلايا ليكون الجدول متماسكاً
+    installmentsTable.setIntercellSpacing(new Dimension(0, 0));
 
-        setColumnWidths();
-        customizeTableHeader(); // تم إصلاحها بالأسفل
-        customizeTableCells();
+    setColumnWidths();
+    customizeTableHeader(); // سيتم استدعاء الدالة الجديدة المبسطة
+    customizeTableCells();
 
-        JScrollPane scrollPane = new JScrollPane(installmentsTable);
-        add(scrollPane, BorderLayout.CENTER);
+    JScrollPane scrollPane = new JScrollPane(installmentsTable);
+    // التعديل 3: جعل خلفية المنطقة الحاوية للجدول بيضاء بدلاً من الرمادي
+    scrollPane.getViewport().setBackground(Color.WHITE);
+    // اختياري: إضافة إطار خفيف بنفس لون الشبكة لتوحيد الشكل (اختياري تماماً)
+    // scrollPane.setBorder(BorderFactory.createLineBorder(new Color(189, 195, 49)));
+    
+    add(scrollPane, BorderLayout.CENTER);
 
-        // --- الجزء السفلي ---
-        JPanel bottomPanel = new JPanel(new BorderLayout());
-        bottomPanel.setOpaque(false);
-        
-        summaryLabel = new JLabel("إجمالي الأقساط المتأخرة: 0.00 ج.م");
-        summaryLabel.setFont(getCairoFont(16f).deriveFont(Font.BOLD));
-        summaryLabel.setForeground(new Color(192, 57, 43));
-        
-        JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        buttonsPanel.setOpaque(false);
+    // --- الجزء السفلي ---
+    JPanel bottomPanel = new JPanel(new BorderLayout());
+    bottomPanel.setOpaque(false);
+    bottomPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+    
+    summaryLabel = new JLabel("إجمالي الأقساط المتأخرة: 0.00 ج.م");
+    summaryLabel.setFont(getCairoFont(16f).deriveFont(Font.BOLD));
+    summaryLabel.setForeground(new Color(192, 57, 43));
+    
+    JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+    buttonsPanel.setOpaque(false);
 
-        JButton refreshBtn = new JButton("تحديث الجدول");
-        refreshBtn.setFont(getCairoFont(12f));
-        refreshBtn.addActionListener(e -> refreshData());
+    JButton refreshBtn = new JButton("تحديث الجدول");
+    refreshBtn.setFont(getCairoFont(12f));
+    refreshBtn.addActionListener(e -> refreshData());
 
-        JButton updateStatusBtn = new JButton("تعديل حالة القسط المحدد");
-        updateStatusBtn.setFont(getCairoFont(12f));
-        updateStatusBtn.setBackground(new Color(52, 152, 219));
-        updateStatusBtn.setForeground(Color.BLACK);
-        updateStatusBtn.addActionListener(e -> openUpdateStatusDialog());
+    JButton updateStatusBtn = new JButton("تعديل حالة القسط المحدد");
+    updateStatusBtn.setFont(getCairoFont(12f));
+    updateStatusBtn.setBackground(new Color(52, 152, 219));
+    updateStatusBtn.setForeground(Color.BLACK);
+    updateStatusBtn.addActionListener(e -> openUpdateStatusDialog());
 
-        buttonsPanel.add(refreshBtn);
-        buttonsPanel.add(updateStatusBtn);
+    buttonsPanel.add(refreshBtn);
+    buttonsPanel.add(updateStatusBtn);
 
-        bottomPanel.add(summaryLabel, BorderLayout.EAST);
-        bottomPanel.add(buttonsPanel, BorderLayout.WEST);
-        
-        add(bottomPanel, BorderLayout.SOUTH);
-    }
+    // في وضع RTL، الـ EAST هو اليمين (للإجمالي) والـ WEST هو اليسار (للأزرار)
+    bottomPanel.add(summaryLabel, BorderLayout.EAST);
+    bottomPanel.add(buttonsPanel, BorderLayout.WEST);
+    
+    add(bottomPanel, BorderLayout.SOUTH);
+}
 
-    // --- إصلاح مشكلة اختفاء الرؤوس (Header Fix) ---
-    private void customizeTableHeader() {
-        JTableHeader header = installmentsTable.getTableHeader();
-        header.setReorderingAllowed(false); // منع إعادة ترتيب الأعمدة
-        
-        // إنشاء Renderer مخصص لضمان الرسم الصحيح
-        DefaultTableCellRenderer headerRenderer = new DefaultTableCellRenderer() {
-            @Override
-            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
-                super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-                
-                setBackground(new Color(52, 73, 94)); // لون الخلفية الأزرق الداكن
-                setForeground(Color.WHITE);           // لون النص الأبيض
-                setFont(getCairoFont(13f).deriveFont(Font.BOLD));
-                setHorizontalAlignment(JLabel.CENTER);
-                setBorder(BorderFactory.createMatteBorder(0, 0, 1, 1, new Color(200, 200, 200))); // حدود خفيفة
-                
-                return this;
-            }
-        };
-        
-        header.setDefaultRenderer(headerRenderer);
-    }
+
+    // استبدل الدالة القديمة بهذه الدالة الجديدة المبسطة لتطابق صفحة العملاء
+  private void customizeTableHeader() {
+      JTableHeader header = installmentsTable.getTableHeader();
+      header.setReorderingAllowed(false); // منع إعادة ترتيب الأعمدة
+
+      // ضبط الخط والخلفية ولون النص ليطابق جدول العملاء
+      header.setFont(getCairoFont(12f)); 
+      header.setBackground(new Color(245, 245, 245)); // خلفية رمادية فاتحة
+      header.setForeground(Color.BLACK); // نص أسود
+
+      // استخدام الـ Renderer الافتراضي مع توسيط النص فقط
+      ((DefaultTableCellRenderer)header.getDefaultRenderer()).setHorizontalAlignment(JLabel.CENTER);
+  }
+
     // ----------------------------------------------
 
     private String determineStatus(DatabaseManager.Installment inst) {

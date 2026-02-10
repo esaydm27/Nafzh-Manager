@@ -565,23 +565,40 @@ public class NafzhManager extends JFrame {
     }
 
 
-    private void applyRTLLayout(JMenuBar menuBar, Font font) {
-        for (int i = 0; i < menuBar.getMenuCount(); i++) {
-            JMenu menu = menuBar.getMenu(i);
-            menu.setFont(font);
-            menu.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-            for (Component item : menu.getMenuComponents()) {
-                if (item instanceof JMenuItem) {
-                    item.setFont(font);
-                    item.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-                }
-                if (item instanceof JMenu subMenu) {
-                    subMenu.setFont(font);
-                    subMenu.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+    /**
+ * دالة محدثة لتطبيق الخط والاتجاه RTL بشكل تكراري (Recursive)
+ * لضمان وصول التنسيق لجميع العناصر بما فيها القوائم الفرعية العميقة.
+ */
+private void applyRTLLayout(JMenuBar menuBar, Font font) {
+    // 1. المرور على القوائم الرئيسية (ملف، تحرير، عرض...)
+    for (int i = 0; i < menuBar.getMenuCount(); i++) {
+        JMenu menu = menuBar.getMenu(i);
+        // تنسيق القائمة الرئيسية نفسها
+        menu.setFont(font);
+        menu.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        
+        // 2. استدعاء الدالة المساعدة للدخول في محتويات القائمة
+        applyStyleRecursively(menu.getPopupMenu(), font);
+    }
+}
+
+    // --- دالة مساعدة جديدة للدخول في عمق القوائم ---
+    private void applyStyleRecursively(Container container, Font font) {
+        for (Component comp : container.getComponents()) {
+            // التحقق مما إذا كان العنصر عنصر قائمة (سواء كان عنصراً عادياً أو قائمة فرعية)
+            if (comp instanceof JMenuItem) {
+                comp.setFont(font);
+                comp.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+
+                // النقطة الحاسمة: إذا كان العنصر هو نفسه قائمة فرعية (JMenu)
+                if (comp instanceof JMenu) {
+                    // نستدعي نفس الدالة مرة أخرى للدخول إلى محتويات هذه القائمة الفرعية
+                    applyStyleRecursively(((JMenu) comp).getPopupMenu(), font);
                 }
             }
         }
     }
+
 
     public void showPanel(String panelName) {
         this.currentPanelName = panelName;

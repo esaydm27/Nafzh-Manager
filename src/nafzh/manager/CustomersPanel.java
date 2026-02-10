@@ -14,11 +14,21 @@ import java.text.DecimalFormatSymbols;
 import java.util.Locale;
 import javax.swing.table.JTableHeader;
 import javax.swing.event.DocumentEvent;
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import java.awt.*;
+import java.awt.event.*;
+import java.util.Map;
 import javax.swing.event.DocumentListener;
 import static nafzh.manager.NafzhManager.getCairoFont;
 
 public class CustomersPanel extends JPanel {
+    
+    
 
+    // افترضت وجود هذه الكائنات بناءً على سياق الكود السابق
+    
+    private Runnable loadDataCallback; 
     private final DatabaseManager dbManager;
     private JTable customersTable;
     private DefaultTableModel tableModel;
@@ -145,12 +155,11 @@ public class CustomersPanel extends JPanel {
         add(scrollPane, BorderLayout.CENTER);
     }
 
-        public void loadData() {
+    public void loadData() {
         // استدعاء الدالة الجديدة التي تجلب العملاء مع حالتهم
         allCustomersRawData = dbManager.getAllCustomersWithStatus(); 
         updateTable(allCustomersRawData);
     }
-
 
     private void updateTable(List<Map<String, Object>> data) {
         tableModel.setRowCount(0);
@@ -198,7 +207,6 @@ public class CustomersPanel extends JPanel {
             return p;
         }
     }
-
   
     class StatusPanelEditor extends AbstractCellEditor implements javax.swing.table.TableCellEditor {
         private int currentId;
@@ -299,108 +307,174 @@ public class CustomersPanel extends JPanel {
         @Override public Object getCellEditorValue() { return ""; }
     }
 
-
     private void showCustomerDialog(Map<String, Object> existingData) {
-    boolean isEdit = (existingData != null);
-    JDialog dialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), isEdit ? "تعديل عميل" : "إضافة عميل", true);
-    dialog.setLayout(new GridBagLayout());
-    dialog.setSize(400, 280); // حجم محدث لمظهر أفضل
-    dialog.setResizable(false);
-    dialog.setLocationRelativeTo(this);
-    dialog.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        boolean isEdit = (existingData != null);
+        JDialog dialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), isEdit ? "تعديل بيانات العميل" : "إضافة عميل جديد", true);
 
-    // استخدام لوحة رئيسية مع حدود لتحسين التنسيق
-    JPanel panel = new JPanel(new GridBagLayout());
-    panel.setBorder(new EmptyBorder(15, 15, 15, 15));
-    panel.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-    dialog.add(panel, new GridBagConstraints(0, 0, 1, 1, 1.0, 1.0, GridBagConstraints.CENTER, GridBagConstraints.BOTH, new Insets(0, 0, 0, 0), 0, 0));
+        // تصميم طولي وأنيق (بما أن الحقول أصبحت تحت بعضها)
+        dialog.setSize(350, 480); 
+        dialog.setResizable(false);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new BorderLayout());
 
-    GridBagConstraints gbc = new GridBagConstraints();
-    gbc.insets = new Insets(5, 5, 5, 5);
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS)); // ترتيب عمودي
+        panel.setBorder(new EmptyBorder(30, 25, 30, 25)); // هوامش مريحة
+        panel.setBackground(Color.WHITE);
+        panel.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
-    // --- عمود العناوين (اليمين) ---
-    gbc.gridx = 0; // العمود الأول (على اليمين)
-    gbc.weightx = 0.0; // لا يتمدد
-    gbc.fill = GridBagConstraints.NONE;
-    gbc.anchor = GridBagConstraints.LINE_START; // محاذاة لليمين
+        // --- إنشاء الحقول المودرن ---
+        MaterialTextField txtName = new MaterialTextField("اسم العميل", isEdit ? existingData.get("name").toString() : "");
+        MaterialTextField txtAddress = new MaterialTextField("العنوان", isEdit ? existingData.get("address").toString() : "");
+        MaterialTextField txtPhone = new MaterialTextField("رقم الهاتف", isEdit ? existingData.get("phone").toString() : "");
+        String balanceStr = isEdit && existingData.get("balance") != null ? existingData.get("balance").toString() : "0.0";
+        MaterialTextField txtBalance = new MaterialTextField("الرصيد الافتتاحي", balanceStr);
 
-    JLabel lblName = new JLabel("إسم العميل:");
-    lblName.setFont(getCairoFont(11));
-    gbc.gridy = 0;
-    panel.add(lblName, gbc);
+        // إضافة مسافات بين الحقول
+        panel.add(txtName);
+        panel.add(Box.createVerticalStrut(15));
+        panel.add(txtAddress);
+        panel.add(Box.createVerticalStrut(15));
+        panel.add(txtPhone);
+        panel.add(Box.createVerticalStrut(15));
+        panel.add(txtBalance);
+        panel.add(Box.createVerticalStrut(25)); // مسافة قبل الزر
 
-    JLabel lblAddress = new JLabel("العنوان:");
-    lblAddress.setFont(getCairoFont(11));
-    gbc.gridy = 1;
-    panel.add(lblAddress, gbc);
+        // --- زر الحفظ ---
+        JButton btnSave = new JButton("حفظ البيانات");
+        btnSave.setFont(getCairoFont(14));
+        btnSave.setBackground(new Color(39, 174, 96));
+        btnSave.setForeground(Color.BLACK);
+        btnSave.setFocusPainted(false);
+        btnSave.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        // جعل الزر بعرض كامل
+        btnSave.setAlignmentX(Component.CENTER_ALIGNMENT);
+        btnSave.setMaximumSize(new Dimension(Integer.MAX_VALUE, 45)); 
 
-    JLabel lblPhone = new JLabel("رقم الهاتف:");
-    lblPhone.setFont(getCairoFont(11));
-    gbc.gridy = 2;
-    panel.add(lblPhone, gbc);
-
-    JLabel lblBalance = new JLabel("الرصيد الافتتاحي:");
-    lblBalance.setFont(getCairoFont(11));
-    gbc.gridy = 3;
-    panel.add(lblBalance, gbc);
-
-    // --- عمود حقول الإدخال (اليسار) ---
-    gbc.gridx = 1; // العمود الثاني (على اليسار)
-    gbc.weightx = 1.0; // يتمدد ليملأ المساحة
-    gbc.fill = GridBagConstraints.HORIZONTAL; // يملأ العرض
-
-    JTextField txtName = new JTextField(isEdit ? existingData.get("name").toString() : "", 15);
-    txtName.setFont(getCairoFont(11));
-    gbc.gridy = 0;
-    panel.add(txtName, gbc);
-
-    JTextField txtAddress = new JTextField(isEdit ? existingData.get("address").toString() : "", 15);
-    txtAddress.setFont(getCairoFont(11));
-    gbc.gridy = 1;
-    panel.add(txtAddress, gbc);
-
-    JTextField txtPhone = new JTextField(isEdit ? existingData.get("phone").toString() : "", 15);
-    txtPhone.setFont(getCairoFont(11));
-    gbc.gridy = 2;
-    panel.add(txtPhone, gbc);
-
-    JTextField txtBalance = new JTextField(isEdit ? (existingData.get("balance") != null ? existingData.get("balance").toString() : "0") : "0", 15);
-    txtBalance.setFont(getCairoFont(11));
-    gbc.gridy = 3;
-    panel.add(txtBalance, gbc);
-
-    // --- زر الحفظ ---
-    JButton btnSave = new JButton(isEdit ? "تعديل البيانات" : "إضافة العميل");
-    btnSave.setFont(getCairoFont(12));
-    btnSave.setBackground(new Color(41, 128, 185));
-    btnSave.setForeground(Color.WHITE);
-    btnSave.setFocusPainted(false);
-
-    gbc.gridy = 4;
-    gbc.gridx = 0;
-    gbc.gridwidth = 2; // يمتد على كلا العمودين
-    gbc.anchor = GridBagConstraints.CENTER;
-    gbc.fill = GridBagConstraints.NONE;
-    gbc.insets = new Insets(15, 5, 5, 5); // مسافة إضافية فوق الزر
-    panel.add(btnSave, gbc);
-
-    btnSave.addActionListener(e -> {
-        try {
-            if (isEdit) {
-                dbManager.updateCustomer((int) existingData.get("id"), txtName.getText(), txtAddress.getText(), txtPhone.getText(), Double.parseDouble(txtBalance.getText()));
-            } else {
-                dbManager.addCustomer(txtName.getText(), txtAddress.getText(), txtPhone.getText(), Double.parseDouble(txtBalance.getText()), 1);
+        btnSave.addActionListener(e -> {
+            try {
+                String name = txtName.getText().trim();
+                if (name.isEmpty()) {
+                    JOptionPane.showMessageDialog(dialog, "اسم العميل مطلوب", "تنبيه", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+                double balance = Double.parseDouble(txtBalance.getText().trim());
+                if (isEdit) {
+                    dbManager.updateCustomer((int) existingData.get("id"), name, txtAddress.getText(), txtPhone.getText(), balance);
+                } else {
+                    dbManager.addCustomer(name, txtAddress.getText(), txtPhone.getText(), balance, 0);
+                }
+                loadData();
+                dialog.dispose();
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(dialog, "الرصيد يجب أن يكون رقماً صحيحاً", "خطأ", JOptionPane.ERROR_MESSAGE);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(dialog, "حدث خطأ: " + ex.getMessage());
             }
-            loadData();
-            dialog.dispose();
-        } catch (Exception ex) {
-            JOptionPane.showMessageDialog(dialog, "يرجى التأكد من صحة البيانات المدخلة");
-        }
-    });
+        });
 
-    dialog.setVisible(true);
-}
-    
+        panel.add(btnSave);
+
+        dialog.add(panel, BorderLayout.CENTER);
+        dialog.setVisible(true);
+    }
+
+    class FloatingTextField extends JPanel {
+        private JTextField textField;
+        private JLabel label;
+        private String placeholder;
+        private boolean isFloating = false;
+
+        public FloatingTextField(String placeholder) {
+            this.placeholder = placeholder;
+            setLayout(null);
+            setBackground(Color.WHITE);
+            setPreferredSize(new Dimension(250, 50));
+
+            label = new JLabel(placeholder);
+            label.setFont(new Font("Cairo", Font.PLAIN, 14));
+            label.setForeground(Color.GRAY);
+            label.setHorizontalAlignment(SwingConstants.RIGHT);
+            label.setBounds(5, 15, 230, 20);
+            add(label);
+
+            textField = new JTextField();
+            textField.setFont(new Font("Cairo", Font.PLAIN, 14));
+            textField.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Color.LIGHT_GRAY));
+            textField.setBackground(new Color(0, 0, 0, 0));
+            textField.setOpaque(false);
+            textField.setBounds(5, 15, 230, 30);
+            textField.setHorizontalAlignment(JTextField.RIGHT);
+            textField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+            add(textField);
+
+            textField.addFocusListener(new FocusAdapter() {
+                @Override
+                public void focusGained(FocusEvent e) {
+                    floatLabel(true);
+                    textField.setBorder(BorderFactory.createMatteBorder(0, 0, 2, 0, new Color(39, 174, 96)));
+                }
+
+                @Override
+                public void focusLost(FocusEvent e) {
+                    if (textField.getText().isEmpty()) {
+                        floatLabel(false);
+                    }
+                    textField.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Color.LIGHT_GRAY));
+                }
+            });
+        }
+
+        private void floatLabel(boolean floating) {
+            if (floating && !isFloating) {
+                label.setFont(new Font("Cairo", Font.BOLD, 11));
+                label.setForeground(new Color(39, 174, 96));
+                label.setBounds(5, 0, 230, 15);
+                isFloating = true;
+            } else if (!floating && isFloating) {
+                label.setFont(new Font("Cairo", Font.PLAIN, 14));
+                label.setForeground(Color.GRAY);
+                label.setBounds(5, 15, 230, 20);
+                isFloating = false;
+            }
+            repaint();
+        }
+
+        public String getText() { return textField.getText(); }
+        public void setText(String text) { 
+            textField.setText(text);
+            if (!text.isEmpty()) floatLabel(true);
+        }
+    }
+
+
+    private JTextField createStyledTextField(String text) {
+     JTextField field = new JTextField(text); // إزالة عدد الأعمدة هنا ليعتمد على Dimension
+     field.setFont(getCairoFont(13)); // خط أوضح قليلاً
+     field.setHorizontalAlignment(JTextField.RIGHT);
+     field.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+     // الارتفاع المناسب هو 35 بكسل، والعرض سيأخذه من الـ GridBagLayout
+     field.setPreferredSize(new Dimension(220, 35)); 
+     return field;
+ }
+
+    private void addFormRow(JPanel panel, String labelText, JComponent field, GridBagConstraints gbc, int y) {
+     gbc.gridy = y;
+
+     // التسمية (Label) - تأخذ مساحة ثابتة
+     gbc.gridx = 0;
+     gbc.weightx = 0.0; // لا تتمدد
+     JLabel label = new JLabel(labelText);
+     label.setFont(getCairoFont(12));
+     label.setPreferredSize(new Dimension(100, 30)); // عرض ثابت للتسميات لضمان المحاذاة
+     panel.add(label, gbc);
+
+     // الحقل (Field) - يتمدد ليملأ الباقي
+     gbc.gridx = 1;
+     gbc.weightx = 1.0; // يتمدد
+     panel.add(field, gbc);
+ }
+
     private void toggleAllCustomersStatus() {
     int confirm = JOptionPane.showConfirmDialog(this, 
         "هل تريد عكس حالة جميع العملاء؟\n(النشط سيصبح خامل، والخامل سيصبح نشط)", 
@@ -433,4 +507,67 @@ public class CustomersPanel extends JPanel {
         gbc.gridy = y; gbc.gridx = 1; dialog.add(lbl, gbc);
         gbc.gridx = 0; dialog.add(field, gbc);
     }
+
+    class MaterialTextField extends JPanel {
+    private final JTextField textField;
+    private final JLabel label;
+    private final Color activeColor = new Color(39, 174, 96); // أخضر عند التركيز
+    private final Color inactiveColor = Color.GRAY;
+    
+    public MaterialTextField(String labelText, String initialText) {
+        setLayout(new BorderLayout());
+        setBackground(Color.WHITE);
+        setBorder(BorderFactory.createEmptyBorder(5, 0, 5, 0)); // مسافات خارجية
+        
+        // العنوان (Label) الذي سيظهر بالأعلى
+        label = new JLabel(labelText);
+        label.setFont(getCairoFont(11));
+        label.setForeground(inactiveColor);
+        label.setHorizontalAlignment(JLabel.RIGHT);
+        label.setBorder(BorderFactory.createEmptyBorder(0, 5, 2, 5));
+        
+        // حقل النص
+        textField = new JTextField(initialText);
+        textField.setFont(getCairoFont(13));
+        textField.setHorizontalAlignment(JTextField.RIGHT);
+        textField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        
+        // إزالة الحدود الافتراضية واستبدالها بخط سفلي فقط (ستايل أندرويد)
+        textField.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(0, 0, 1, 0, inactiveColor),
+            BorderFactory.createEmptyBorder(5, 5, 5, 5)
+        ));
+        textField.setBackground(Color.WHITE);
+        
+        // إضافة مستمع للأحداث لتغيير اللون عند التركيز
+        textField.addFocusListener(new java.awt.event.FocusAdapter() {
+            public void focusGained(java.awt.event.FocusEvent evt) {
+                label.setForeground(activeColor);
+                textField.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createMatteBorder(0, 0, 2, 0, activeColor), // خط سميك وملون
+                    BorderFactory.createEmptyBorder(5, 5, 5, 5)
+                ));
+            }
+            public void focusLost(java.awt.event.FocusEvent evt) {
+                label.setForeground(inactiveColor);
+                textField.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createMatteBorder(0, 0, 1, 0, inactiveColor), // عودة للخط الرفيع
+                    BorderFactory.createEmptyBorder(5, 5, 5, 5)
+                ));
+            }
+        });
+        
+        add(label, BorderLayout.NORTH);
+        add(textField, BorderLayout.CENTER);
+    }
+    
+    public String getText() {
+        return textField.getText();
+    }
+    
+    public void setText(String t) {
+        textField.setText(t);
+    }
+}
+
 }

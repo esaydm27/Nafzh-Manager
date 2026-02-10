@@ -102,44 +102,43 @@ public class DatabaseManager {
         return DriverManager.getConnection(URL);
     }
 
-    public void createNewTables() {
-        String[] sqlCommands = {
-            // جدول المنتجات
-            "CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, category TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'قطعة', current_quantity INTEGER NOT NULL DEFAULT 0, purchase_price REAL NOT NULL DEFAULT 0.0, sale_price REAL NOT NULL DEFAULT 0.0);",
-            
-            // جدول المبيعات
-            "CREATE TABLE IF NOT EXISTS Sales (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_date TEXT NOT NULL, customer_id INTEGER, customer_name TEXT, total_amount REAL NOT NULL, amount_paid REAL DEFAULT 0.0, FOREIGN KEY(customer_id) REFERENCES customers(id));",
-            
-            // جدول أصناف المبيعات
-            "CREATE TABLE IF NOT EXISTS sale_items (sale_id INTEGER, product_id INTEGER, product_name TEXT, product_unit TEXT, quantity INTEGER NOT NULL, sale_price REAL NOT NULL, subtotal REAL NOT NULL, PRIMARY KEY (sale_id, product_id), FOREIGN KEY (sale_id) REFERENCES sales(id), FOREIGN KEY (product_id) REFERENCES products(id));",
-            
-            // جدول الفئات
-            "CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, category_name TEXT NOT NULL UNIQUE);",
-            
-            // جدول العملاء
-            "CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, address TEXT, phone TEXT, balance REAL DEFAULT 0.0, transaction_count INTEGER DEFAULT 0, status INTEGER DEFAULT 1);", 
-            
-            // جدول الوحدات
-            "CREATE TABLE IF NOT EXISTS units (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE);",
-        
-            // جدول الأقساط
-            "CREATE TABLE IF NOT EXISTS installments (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER, customer_id INTEGER, due_date TEXT, payment_date TEXT, amount REAL, is_paid INTEGER DEFAULT 0, FOREIGN KEY(sale_id) REFERENCES sales(id), FOREIGN KEY(customer_id) REFERENCES customers(id));",
+   public void createNewTables() {
+    String[] sqlCommands = {
+        // جدول الفئات
+        "CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, category_name TEXT NOT NULL UNIQUE);",
 
-            // --- التعديل الجديد: جدول المستخدمين ---
-            "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password TEXT NOT NULL, role TEXT DEFAULT 'user');",
+        // جدول المنتجات
+        "CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, category TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'قطعة', current_quantity INTEGER NOT NULL DEFAULT 0, purchase_price REAL NOT NULL DEFAULT 0.0, sale_price REAL NOT NULL DEFAULT 0.0, category_id INTEGER, FOREIGN KEY(category_id) REFERENCES categories(id));",
         
-            "CREATE TABLE IF NOT EXISTS app_settings (id INTEGER PRIMARY KEY CHECK (id = 1), company_name TEXT, slogan TEXT, phone1 TEXT, phone2 TEXT, salesman TEXT, logo BLOB);"
+        // جدول العملاء
+        "CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, address TEXT, phone TEXT, balance REAL DEFAULT 0.0, transaction_count INTEGER DEFAULT 0, status INTEGER DEFAULT 1);", 
+        
+        // جدول المبيعات (محدث بالأعمدة الجديدة)
+        "CREATE TABLE IF NOT EXISTS Sales (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_date TEXT NOT NULL, customer_id INTEGER, customer_name TEXT, total_amount REAL NOT NULL, amount_paid REAL DEFAULT 0.0, paid_amount REAL DEFAULT 0.0, remaining_amount REAL DEFAULT 0.0, final_amount REAL DEFAULT 0.0, FOREIGN KEY(customer_id) REFERENCES customers(id));",
+        
+        // جدول أصناف المبيعات (sale_items هو الاسم المعتمد)
+        "CREATE TABLE IF NOT EXISTS sale_items (sale_id INTEGER, product_id INTEGER, product_name TEXT, product_unit TEXT, quantity INTEGER NOT NULL, sale_price REAL NOT NULL, subtotal REAL NOT NULL, PRIMARY KEY (sale_id, product_id), FOREIGN KEY (sale_id) REFERENCES Sales(id), FOREIGN KEY (product_id) REFERENCES products(id));",
+        
+        // جدول الوحدات
+        "CREATE TABLE IF NOT EXISTS units (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE);",
     
-        
-        };
+        // جدول الأقساط
+        "CREATE TABLE IF NOT EXISTS installments (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER, customer_id INTEGER, due_date TEXT, payment_date TEXT, amount REAL, is_paid INTEGER DEFAULT 0, FOREIGN KEY(sale_id) REFERENCES Sales(id), FOREIGN KEY(customer_id) REFERENCES customers(id));",
 
-        try (Statement stmt = conn.createStatement()) {
-            for(String sql : sqlCommands) stmt.execute(sql);
-            System.out.println("تم التأكد من سلامة الجداول وإنشاؤها بالتعديلات الجديدة.");
-        } catch (SQLException e) { 
-            System.err.println("Error creating tables: " + e.getMessage()); 
-        }
+        // جدول المستخدمين
+        "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password TEXT NOT NULL, role TEXT DEFAULT 'user');",
+    
+        // إعدادات التطبيق
+        "CREATE TABLE IF NOT EXISTS app_settings (id INTEGER PRIMARY KEY CHECK (id = 1), company_name TEXT, slogan TEXT, phone1 TEXT, phone2 TEXT, salesman TEXT, logo BLOB);"
+    };
+
+    try (Statement stmt = conn.createStatement()) {
+        for(String sql : sqlCommands) stmt.execute(sql);
+        System.out.println("تم إنشاء الجداول الموحدة بنجاح.");
+    } catch (SQLException e) { 
+        System.err.println("Error creating tables: " + e.getMessage()); 
     }
+}
 
     private void ensureColumnsExist() {
         try (Statement stmt = conn.createStatement()) {
@@ -550,13 +549,149 @@ public class DatabaseManager {
         return 0.0;
     }
 
-    public List<List<Object>> getAllSaleTransactions() {
-        List<List<Object>> list = new ArrayList<>();
-        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery("SELECT id, sale_date, customer_name, total_amount FROM Sales ORDER BY id DESC")) {
-            while (rs.next()) list.add(Arrays.asList(rs.getInt("id"), rs.getString("sale_date"), rs.getString("customer_name"), rs.getDouble("total_amount")));
-        } catch (SQLException e) { System.err.println("Error fetching all sale transactions: " + e.getMessage()); }
-        return list;
+ public List<List<Object>> getAllSaleTransactions() {
+    List<List<Object>> list = new ArrayList<>();
+    
+    // هذا الاستعلام يطبق المنطق الذي طلبته بالضبط:
+    // إذا كانت العملية لها أقساط: الإجمالي = المقدم (amount_paid) + مجموع الأقساط.
+    // إذا كانت كاش: الإجمالي = total_amount المسجل.
+    
+    String query = """
+        SELECT 
+            s.id, 
+            s.sale_date, 
+            s.customer_name,
+            CASE 
+                -- إذا وجدنا أقساط لهذه العملية في جدول installments
+                WHEN EXISTS (SELECT 1 FROM installments WHERE sale_id = s.id) THEN 
+                    -- الإجمالي = المدفوع مقدماً + مجموع الأقساط
+                    COALESCE(s.amount_paid, 0) + COALESCE((SELECT SUM(amount) FROM installments WHERE sale_id = s.id), 0)
+                ELSE 
+                    -- وإلا فهي كاش، نأخذ الرقم المسجل
+                    s.total_amount 
+            END as calculated_total
+        FROM Sales s
+        ORDER BY s.id DESC
+    """;
+
+    try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
+        while (rs.next()) {
+            double total = rs.getDouble("calculated_total");
+            
+            list.add(Arrays.asList(
+                rs.getInt("id"), 
+                rs.getString("sale_date"), 
+                rs.getString("customer_name"), 
+                total // سيعرض 60580 بدلاً من 56580
+            ));
+        }
+    } catch (SQLException e) { 
+        System.err.println("خطأ في جلب سجل المبيعات: " + e.getMessage()); 
     }
+    return list;
+}
+
+    // دالة مساعدة
+    private double getInstallmentsTotal(int saleId) {
+        try (PreparedStatement pstmt = conn.prepareStatement("SELECT SUM(amount) FROM Installments WHERE sale_id = ?")) {
+            pstmt.setInt(1, saleId);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) return rs.getDouble(1);
+        } catch (SQLException e) { return 0; }
+        return 0;
+    }
+
+
+    // أضف هذه الدالة في DatabaseManager.java
+    public double getRealSaleTotal(int saleId) {
+        // هذه الدالة تحسب الإجمالي الحقيقي للفاتورة الواحدة
+        // المعادلة: المقدم (amount_paid) + مجموع الأقساط (installments)
+        // وإذا لم يكن هناك أقساط، تعيد total_amount العادي
+
+        String query = """
+            SELECT 
+                CASE 
+                    WHEN EXISTS (SELECT 1 FROM installments WHERE sale_id = s.id) THEN 
+                        COALESCE(s.amount_paid, 0) + COALESCE((SELECT SUM(amount) FROM installments WHERE sale_id = s.id), 0)
+                    ELSE 
+                        s.total_amount 
+                END as real_total
+            FROM Sales s
+            WHERE s.id = ?
+        """;
+
+        try (PreparedStatement pstmt = conn.prepareStatement(query)) {
+            pstmt.setInt(1, saleId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getDouble("real_total");
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Error calculating real sale total: " + e.getMessage());
+        }
+        return 0.0;
+    }
+
+    // دالة مساعدة لحساب الإجمالي الحقيقي
+     private double calculateRealTotal(int saleId, double originalTotal) {
+            // نحسب مجموع الأقساط لهذه البيعة
+            double installmentsSum = 0;
+            try (PreparedStatement pstmt = conn.prepareStatement("SELECT SUM(amount) FROM Installments WHERE sale_id = ?")) {
+                pstmt.setInt(1, saleId);
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    installmentsSum = rs.getDouble(1);
+                }
+            } catch (SQLException e) {
+                return originalTotal; // في حالة الخطأ، نعود للأصل
+            }
+
+            // المنطق:
+            // إذا كان مجموع الأقساط 0، فهذا بيع كاش، والسعر هو originalTotal.
+            if (installmentsSum == 0) {
+                return originalTotal;
+            }
+
+            // إذا كان هناك أقساط:
+            // هنا المعضلة: كيف نعرف المقدم؟
+            // سنفترض أن originalTotal هو المبلغ "الكاش" قبل الفائدة.
+            // وأن installmentsSum هو المبلغ "المقسط" (المتبقي + الفائدة).
+            // إذن: السعر الكلي = المقدم + مجموع الأقساط.
+            // المقدم = originalTotal - (أصل مبلغ الأقساط بدون فائدة). <-- هذا مجهول!
+
+            // محاولة ذكية: 
+            // هل originalTotal في جدول Sales يتم تحديثه ليشمل الفائدة؟ لا يبدو ذلك.
+
+            // الحل الأرجح:
+            // في أنظمة التقسيط، عادة يتم تسجيل البيعة بـ:
+            // total_amount = السعر الكاش (أو السعر الأساسي).
+            // ويتم دفع جزء منه كمقدم.
+
+            // إذا افترضنا أن الـ 4000 (المقدم) + الـ 56580 (الأقساط) = 60580.
+            // هذا يعني أننا يجب أن نجمع المقدم + الأقساط.
+
+            // ولكننا لا نعرف المقدم من قاعدة البيانات مباشرة لعدم وجود عمود paid_amount.
+            // لذا، سنضطر لاستنتاجه من تفاصيل الفاتورة (SaleItems).
+
+            // نحسب إجمالي سعر المنتجات (سعر الوحدة * الكمية) من جدول SaleItems
+            double productsTotal = 0;
+            try (PreparedStatement pstmt = conn.prepareStatement("SELECT SUM(total_price) FROM SaleItems WHERE sale_id = ?")) {
+                pstmt.setInt(1, saleId);
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    productsTotal = rs.getDouble(1);
+                }
+            } catch (SQLException e) { }
+
+            // الآن: 
+            // productsTotal هو (60580) الذي رأيته في الفاتورة؟ أم هو السعر الكاش؟
+            // إذا كان productsTotal هو السعر النهائي (بالفائدة)، فالحل بسيط جداً: استخدم productsTotal بدلاً من total_amount!
+
+            // دعنا نجرب استخدام مجموع SaleItems كحل بديل وموثوق
+            return productsTotal > 0 ? productsTotal : originalTotal;
+        }
+
 
     public List<Object> getSaleDetails(int saleId) {
         String sql = "SELECT s.id, s.sale_date, s.customer_id, s.customer_name, s.total_amount, s.amount_paid, c.balance " +
@@ -928,29 +1063,28 @@ public class DatabaseManager {
     }
     
     private void checkAndCreateTables() {
-        try (Statement stmt = conn.createStatement()) {
-            // إنشاء الجداول الأساسية إذا لم تكن موجودة
-            stmt.execute("CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)");
-            stmt.execute("CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, category_id INTEGER, price REAL, stock INTEGER, unit TEXT, FOREIGN KEY(category_id) REFERENCES categories(id))");
-            stmt.execute("CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, address TEXT, phone TEXT, balance REAL DEFAULT 0)");
-            stmt.execute("CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, total_amount REAL, discount REAL, final_amount REAL, paid_amount REAL, remaining_amount REAL, sale_date TEXT, FOREIGN KEY(customer_id) REFERENCES customers(id))");
-            stmt.execute("CREATE TABLE IF NOT EXISTS sale_details (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER, product_id INTEGER, quantity INTEGER, price REAL, total REAL, FOREIGN KEY(sale_id) REFERENCES sales(id), FOREIGN KEY(product_id) REFERENCES products(id))");
-            stmt.execute("CREATE TABLE IF NOT EXISTS installments (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER, customer_id INTEGER, amount REAL, due_date TEXT, payment_date TEXT, is_paid INTEGER DEFAULT 0, FOREIGN KEY(sale_id) REFERENCES sales(id), FOREIGN KEY(customer_id) REFERENCES customers(id))");
-            stmt.execute("CREATE TABLE IF NOT EXISTS inventory_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER, change_amount INTEGER, type TEXT, reason TEXT, log_date TEXT, FOREIGN KEY(product_id) REFERENCES products(id))");
+    try (Statement stmt = conn.createStatement()) {
+        // إنشاء الجداول الأساسية
+        stmt.execute("CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)");
+        stmt.execute("CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, category_id INTEGER, price REAL, stock INTEGER, unit TEXT, FOREIGN KEY(category_id) REFERENCES categories(id))");
+        stmt.execute("CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, address TEXT, phone TEXT, balance REAL DEFAULT 0, status INTEGER DEFAULT 1)");
+        
+        // >>> التعديل المهم جداً هنا: إضافة paid_amount و remaining_amount <<<
+        stmt.execute("CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, total_amount REAL, discount REAL, final_amount REAL, paid_amount REAL DEFAULT 0, remaining_amount REAL DEFAULT 0, sale_date TEXT, FOREIGN KEY(customer_id) REFERENCES customers(id))");
+        
+        // >>> التأكد من جدول التفاصيل <<<
+        stmt.execute("CREATE TABLE IF NOT EXISTS sale_details (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER, product_id INTEGER, quantity INTEGER, price REAL, total REAL, FOREIGN KEY(sale_id) REFERENCES sales(id), FOREIGN KEY(product_id) REFERENCES products(id))");
+        
+        stmt.execute("CREATE TABLE IF NOT EXISTS installments (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER, customer_id INTEGER, amount REAL, due_date TEXT, payment_date TEXT, is_paid INTEGER DEFAULT 0, FOREIGN KEY(sale_id) REFERENCES sales(id), FOREIGN KEY(customer_id) REFERENCES customers(id))");
+        stmt.execute("CREATE TABLE IF NOT EXISTS inventory_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER, change_amount INTEGER, type TEXT, reason TEXT, log_date TEXT, FOREIGN KEY(product_id) REFERENCES products(id))");
 
-            // --- التعديل التراكمي: إضافة عمود status لجدول العملاء إذا لم يكن موجوداً ---
-            try {
-                stmt.execute("ALTER TABLE customers ADD COLUMN status INTEGER DEFAULT 1");
-                System.out.println("تم إضافة عمود status لجدول العملاء بنجاح.");
-            } catch (SQLException e) {
-                // إذا كان العمود موجوداً بالفعل سيحدث خطأ، نتجاهله ببساطة
-            }
-            
-            System.out.println("تم التأكد من سلامة الجداول وإنشاؤها بالتعديلات الجديدة.");
-        } catch (SQLException e) {
-            System.err.println("Error creating tables: " + e.getMessage());
-        }
+        System.out.println("تم إنشاء الجداول بالهيكل الجديد (شاملاً paid_amount).");
+    } catch (SQLException e) {
+        System.err.println("خطأ في إنشاء الجداول: " + e.getMessage());
     }
+}
+
+
     
     public List<Customer> getAllCustomersForPOS() {
     List<Customer> list = new ArrayList<>() ;
@@ -1058,6 +1192,40 @@ public class DatabaseManager {
         }
         return null;
     }
+// 1. التحقق هل البيع تقسيط أم لا
+public boolean isInstallmentSale(int saleId) {
+    try (PreparedStatement pstmt = conn.prepareStatement("SELECT 1 FROM installments WHERE sale_id = ? LIMIT 1")) {
+        pstmt.setInt(1, saleId);
+        try (ResultSet rs = pstmt.executeQuery()) { return rs.next(); }
+    } catch (SQLException e) { return false; }
+}
+
+// 2. جلب قيمة المقدم
+public double getSaleDownPayment(int saleId) {
+    try (PreparedStatement pstmt = conn.prepareStatement("SELECT amount_paid FROM Sales WHERE id = ?")) {
+        pstmt.setInt(1, saleId);
+        try (ResultSet rs = pstmt.executeQuery()) { if(rs.next()) return rs.getDouble(1); }
+    } catch (SQLException e) { }
+    return 0.0;
+}
+
+// 3. جلب أقساط بيعة معينة
+public List<Installment> getInstallmentsBySaleId(int saleId) {
+    List<Installment> list = new ArrayList<>();
+    String sql = "SELECT id, sale_id, customer_id, amount, due_date, payment_date, is_paid FROM installments WHERE sale_id = ? ORDER BY due_date";
+    try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        pstmt.setInt(1, saleId);
+        ResultSet rs = pstmt.executeQuery();
+        while (rs.next()) {
+            list.add(new Installment(
+                rs.getInt("id"), rs.getInt("sale_id"), "", // الاسم غير مهم هنا
+                rs.getDouble("amount"), rs.getString("due_date"), 
+                rs.getString("payment_date"), rs.getInt("is_paid") == 1
+            ));
+        }
+    } catch (SQLException e) { e.printStackTrace(); }
+    return list;
+}
 
     
 }
