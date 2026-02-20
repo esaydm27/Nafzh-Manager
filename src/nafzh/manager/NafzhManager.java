@@ -37,6 +37,7 @@ public class NafzhManager extends JFrame {
     private String currentPanelName = DASHBOARD_PANEL;
     private InstallmentsPanel installmentsPanelInstance; // اللوحة الجديدة
     private boolean sidebarVisible = true;
+    private Updater updater; // كائن Updater
     private static final String DASHBOARD_PANEL = "Dashboard";
     private static final String INVENTORY_PANEL = "Inventory";
     private static final String TRANSACTIONS_PANEL = "Transactions";
@@ -65,6 +66,7 @@ public class NafzhManager extends JFrame {
             System.err.println("فشل تحميل أيقونة التطبيق: " + e.getMessage());
         }
         dbManager = new DatabaseManager();
+        
         dbManager.createNewTables();
         initializeUI();
         showPanel(DASHBOARD_PANEL);
@@ -78,6 +80,9 @@ public class NafzhManager extends JFrame {
         sidebar.setPreferredSize(new Dimension(230, getHeight())); // عرض مناسب
         sidebar.setBackground(new Color(45, 62, 80));
         sidebar.setBorder(BorderFactory.createEmptyBorder(15, 5, 15, 5));
+        
+        updater = new Updater(this); // تهيئة الـ Updater
+
 
         // جلب بيانات المؤسسة
         DatabaseManager.BusinessInfo info = dbManager.getBusinessInfo();
@@ -318,10 +323,12 @@ public class NafzhManager extends JFrame {
         JMenu fileMenu = new JMenu("ملف");
         JMenuItem backupItem = new JMenuItem("نسخ احتياطي لقاعدة البيانات");
         JMenuItem restoreItem = new JMenuItem("استعادة نسخة قديمة");
+        JMenuItem checkUpdateItem = new JMenuItem("فحص التحديثات"); // جديد
         JMenuItem exitItem = new JMenuItem("خروج من النظام");
 
         backupItem.addActionListener(e -> performBackup());
         restoreItem.addActionListener(e -> performRestore());
+        checkUpdateItem.addActionListener(e -> showUpdateCheckDialog());
         exitItem.addActionListener(e -> {
             dispose();
             System.exit(0);
@@ -330,6 +337,7 @@ public class NafzhManager extends JFrame {
         fileMenu.add(backupItem);
         fileMenu.add(restoreItem);
         fileMenu.addSeparator();
+        fileMenu.add(checkUpdateItem); // إضافة للواجهة
         fileMenu.add(exitItem);
 
         // ============================================
@@ -564,6 +572,31 @@ public class NafzhManager extends JFrame {
         }
     }
 
+    // دالة تظهر نافذة خيارات فحص التحديثات
+    private void showUpdateCheckDialog() {
+        String[] options = {"من GitHub (ينصح به)", "من ملف محلي"};
+        int choice = JOptionPane.showOptionDialog(this, 
+            "من أين تريد فحص التحديثات؟", "فحص التحديثات", 
+            JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
+
+        if (choice == JOptionPane.CLOSED_OPTION) return; // المستخدم أغلق النافذة
+
+        boolean checkRemote = (choice == 0); // 0 = GitHub, 1 = محلي
+
+        String latestVersion = updater.checkForUpdate(checkRemote);
+
+        if (latestVersion != null) {
+            int confirm = JOptionPane.showConfirmDialog(this, 
+                "إصدار جديد " + latestVersion + " متوفر! هل تريد التحديث الآن؟\n(سيتم إعادة تشغيل التطبيق)", 
+                "تحديث متوفر", JOptionPane.YES_NO_OPTION);
+            if (confirm == JOptionPane.YES_OPTION) {
+                // بدأ عملية التحديث
+                updater.downloadUpdate(latestVersion); 
+            }
+        } else {
+            JOptionPane.showMessageDialog(this, "لا يوجد تحديثات متوفرة حالياً. أنت تستخدم أحدث إصدار.", "لا يوجد تحديث", JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
 
     /**
  * دالة محدثة لتطبيق الخط والاتجاه RTL بشكل تكراري (Recursive)
@@ -911,6 +944,7 @@ private void applyRTLLayout(JMenuBar menuBar, Font font) {
         detailsDialog.setVisible(true);
     }
 
+    /*
     public static void main(String[] args) {
         try {
             UIManager.setLookAndFeel("javax.swing.plaf.nimbus.NimbusLookAndFeel");
@@ -959,8 +993,10 @@ private void applyRTLLayout(JMenuBar menuBar, Font font) {
                 }
                 // ------------------------------------------------
 
-                // تشغيل التطبيق الرئيسي
-                new NafzhManager();
+                NafzhManager app = new NafzhManager();
+                
+                // ثانياً: نستدعي دالة فحص التحديثات
+                app.updater.showUpdateCheckDialog();
                 
             } else {
                 System.exit(0);
@@ -968,6 +1004,82 @@ private void applyRTLLayout(JMenuBar menuBar, Font font) {
         });
     }
   
+        // ... (باقي الكلاس) ...
+
+   */
+    public static void main(String[] args) {
+        try {
+            UIManager.setLookAndFeel("javax.swing.plaf.nimbus.NimbusLookAndFeel");
+        } catch (Exception e) {}
+
+        SwingUtilities.invokeLater(() -> {
+            // 1. نظام الترخيص (License)
+            LicenseManager licenseManager = new LicenseManager();
+            LicenseManager.LicenseStatus status = licenseManager.checkLicense();
+
+            if (status != LicenseManager.LicenseStatus.ACTIVATED) {
+                LicenseDialog licenseDialog = new LicenseDialog(null, licenseManager, status);
+                licenseDialog.setVisible(true);
+
+                if (!licenseDialog.isActivatedOrTrial()) {
+                    System.exit(0);
+                }
+            }
+
+            // 2. الاتصال بقاعدة البيانات وإنشاء الجداول
+            DatabaseManager db = new DatabaseManager();
+            db.createNewTables();
+
+            // 3. شاشة تسجيل الدخول (Login)
+            LoginDialog loginDialog = new LoginDialog(null, db);
+            loginDialog.setVisible(true);
+
+            // 4. إذا نجح الدخول، نبدأ التطبيق
+            if (loginDialog.isAuthenticated()) {
+                
+                DatabaseManager.BusinessInfo info = db.getBusinessInfo();
+                
+                if (info == null) {
+                    JFrame dummyFrame = new JFrame();
+                    BusinessSettingsDialog settingsDialog = new BusinessSettingsDialog(dummyFrame, db);
+                    settingsDialog.setVisible(true);
+                    dummyFrame.dispose();
+                    
+                    if (!settingsDialog.isDataSaved()) {
+                        System.exit(0);
+                    }
+                }
+                
+                NafzhManager app = new NafzhManager();
+                app.setVisible(true); // <--- اجعل التطبيق مرئياً هنا
+                
+                // --- التصحيح هنا: استدعاء دالة التحقق من التحديثات من NafzhManager نفسه ---
+                app.checkUpdatesAtStartup(); 
+                // ---------------------------------------------------------------------
+                
+            } else {
+                System.exit(0);
+            }
+        });
+    }
+
+    // ... (باقي الدوال) ...
+
+    // --- الدالة الجديدة التي ستقوم بفحص التحديثات عند بدء التشغيل ---
+    private void checkUpdatesAtStartup() {
+        String latestVersion = updater.checkForUpdate(true); // فحص من GitHub مباشرة
+
+        if (latestVersion != null) {
+            int confirm = JOptionPane.showConfirmDialog(this, 
+                "إصدار جديد " + latestVersion + " متوفر! هل تريد التحديث الآن؟\n(سيتم إعادة تشغيل التطبيق)", 
+                "تحديث متوفر", JOptionPane.YES_NO_OPTION);
+            if (confirm == JOptionPane.YES_OPTION) {
+                updater.downloadUpdate(latestVersion); 
+            }
+        }
+    }
+    // ... (باقي الكلاس) ...
+
     private void performDynamicFontScaling() {
         int currentWidth = getWidth();
         
