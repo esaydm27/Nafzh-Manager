@@ -24,26 +24,40 @@ public class Updater {
         this.parentFrame = parent;
     }
 
-    public String checkForUpdate(boolean checkRemote) {
-        System.out.println("[Updater] بدء فحص التحديثات...");
-        String latestVersion = null;
-        try {
-            if (checkRemote) {
-                latestVersion = readVersionFromUrl(GITHUB_RAW_VERSION_URL);
-            } else {
-                latestVersion = readVersionFromFile("version.txt");
-            }
-
-            if (latestVersion != null && !latestVersion.isEmpty()) {
-                if (compareVersions(latestVersion, CURRENT_APP_VERSION) > 0) {
-                    return latestVersion;
-                }
-            }
-        } catch (IOException e) {
-            System.err.println("[Updater] خطأ أثناء الفحص: " + e.getMessage());
+    private String getCurrentVersion() {
+    try {
+        Path path = Paths.get(System.getProperty("user.dir"), "version.txt");
+        if (Files.exists(path)) {
+            return Files.readAllLines(path).get(0).trim();
         }
-        return null;
+    } catch (IOException e) {
+        e.printStackTrace();
     }
+    return null; // إذا لم يوجد الملف أو حدث خطأ، ترجع null
+}
+
+public String checkForUpdate(boolean checkRemote) {
+    System.out.println("[Updater] بدء فحص التحديثات...");
+    String latestVersion = null;
+    try {
+        if (checkRemote) {
+            latestVersion = readVersionFromUrl(GITHUB_RAW_VERSION_URL);
+        } else {
+            latestVersion = readVersionFromFile("version.txt");
+        }
+
+        if (latestVersion != null && !latestVersion.isEmpty()) {
+            String currentVersion = getCurrentVersion();
+            if (currentVersion != null && compareVersions(latestVersion, currentVersion) > 0) {
+                return latestVersion;
+            }
+        }
+    } catch (IOException e) {
+        System.err.println("[Updater] خطأ أثناء الفحص: " + e.getMessage());
+    }
+    return null;
+}
+
 
     private String readVersionFromUrl(String urlString) throws IOException {
         URL url = new URL(urlString);
@@ -59,10 +73,12 @@ public class Updater {
     private String readVersionFromFile(String fileName) throws IOException {
         Path path = Paths.get(System.getProperty("user.dir"), fileName);
         if (Files.exists(path)) {
-            return Files.readAllLines(path).get(0);
+            return Files.readAllLines(path).get(0).trim();
         }
         return null;
     }
+
+    
 
     private int compareVersions(String v1, String v2) {
         String[] parts1 = v1.split("\\.");
@@ -97,7 +113,7 @@ public class Updater {
                         out.write(buffer, 0, bytesRead);
                     }
                 }
-                executeUpdaterScript(tempDir.toString(), newJarPath.toString());
+                executeUpdaterScript(tempDir.toString(), newJarPath.toString(), latestVersion);
                 return true;
             }
         } catch (IOException e) {
@@ -106,7 +122,7 @@ public class Updater {
         return false;
     }
 
-    private void executeUpdaterScript(String tempDirPath, String newJarPath) throws IOException {
+    private void executeUpdaterScript(String tempDirPath, String newJarPath, String latestVersion) throws IOException {
         String currentJarPath = getRunningJarPath();
 
         if (currentJarPath == null) {
@@ -114,11 +130,12 @@ public class Updater {
             return;
         }
 
-        String scriptContent = generateUpdateScript();
+        // توليد السكربت مع تمرير رقم النسخة الجديدة
+        String scriptContent = generateUpdateScript(latestVersion);
         Path scriptPath = Paths.get(tempDirPath, "updater.bat");
         Files.write(scriptPath, scriptContent.getBytes("UTF-8"));
 
-        // تشغيل السكريبت في نافذة جديدة مع إبقاء المسارات داخل علامات تنصيص
+        // تشغيل السكربت في نافذة جديدة مع تمرير المسارات
         ProcessBuilder pb = new ProcessBuilder("cmd", "/c", "start", "updater.bat", currentJarPath, newJarPath);
         pb.directory(new File(tempDirPath));
         pb.start();
@@ -144,8 +161,7 @@ public class Updater {
         }
     }
 
-    private String generateUpdateScript() {
-        // تم استبدال النصوص العربية بكلمات إنجليزية ورموز لتجنب مشاكل الترميز (Encoding) في ويندوز
+    private String generateUpdateScript(String latestVersion) {
         return "@echo off\n" +
                "title Nafzh Manager - Update Console\n" +
                "SET \"OLD_JAR=%~1\"\n" +
@@ -173,6 +189,9 @@ public class Updater {
                "    pause\n" +
                "    exit\n" +
                ")\n\n" +
+
+               "echo. [3.5] Writing new version to version.txt...\n" +
+               "echo " + latestVersion + " > \"%~dp0version.txt\"\n\n" +
 
                "echo. [4] Update Successful!\n" +
                "echo. Restarting the application...\n" +
