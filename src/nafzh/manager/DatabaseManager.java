@@ -24,8 +24,13 @@ public class DatabaseManager {
     private static final String URL = "jdbc:sqlite:inventory.db";
     private Connection conn = null;
 
+    /**
+     * الدالة المعدلة للتحقق من تسجيل الدخول
+     * تم استبدال سطر Exception بالاستدعاء الصحيح للدالة التي تفحص قاعدة البيانات
+     */
     boolean checkLogin(String user, String pass) {
-        throw new UnsupportedOperationException("Not supported yet."); // Generated from nbfs://nbhost/SystemFileSystem/Templates/Classes/Code/GeneratedMethodBody
+        // استدعاء دالة التحقق الفعلية وإرجاع النتيجة
+        return checkUserCredentials(user, pass);
     }
 
     public static class Customer {
@@ -50,7 +55,26 @@ public class DatabaseManager {
             return this.name;
         }
     }
-        
+     
+    /**
+     * الدالة المضافة للتحقق من بيانات المستخدم في قاعدة البيانات
+     * تقوم بالبحث عن تطابق اسم المستخدم وكلمة المرور في جدول users
+     */
+    public boolean checkUserCredentials(String username, String password) {
+        String sql = "SELECT * FROM users WHERE username = ? AND password = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, username);
+            pstmt.setString(2, password); 
+            try (ResultSet rs = pstmt.executeQuery()) {
+                // إذا وجد سجل مطابق، تعيد true، وإلا تعيد false
+                return rs.next(); 
+            }
+        } catch (SQLException e) {
+            System.err.println("خطأ أثناء التحقق من بيانات الدخول: " + e.getMessage());
+            return false;
+        }
+    }
+    
     public static class Installment {
         public final int id;
         public final int saleId;
@@ -484,6 +508,7 @@ public class DatabaseManager {
         } catch (SQLException e) { System.err.println("Error deleting product: " + e.getMessage()); return false; }
     }
 
+    /*
     public boolean checkUserCredentials(String username, String password) {
         String sql = "SELECT * FROM users WHERE username = ? AND password = ?";
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -497,7 +522,7 @@ public class DatabaseManager {
             return false;
         }
     }
-
+*/
     public boolean addUser(String username, String password, String role) {
         String sql = "INSERT INTO users(username, password, role) VALUES(?, ?, ?)";
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
