@@ -22,16 +22,15 @@ import java.util.Locale;
 public class DatabaseManager {
 
     private static final String URL = "jdbc:sqlite:inventory.db";
-    private Connection conn = null;
+    
+    private Connection connection;
+
 
     /**
      * الدالة المعدلة للتحقق من تسجيل الدخول
      * تم استبدال سطر Exception بالاستدعاء الصحيح للدالة التي تفحص قاعدة البيانات
      */
-    boolean checkLogin(String user, String pass) {
-        // استدعاء دالة التحقق الفعلية وإرجاع النتيجة
-        return checkUserCredentials(user, pass);
-    }
+    
 
     public static class Customer {
         public final int id;
@@ -60,20 +59,28 @@ public class DatabaseManager {
      * الدالة المضافة للتحقق من بيانات المستخدم في قاعدة البيانات
      * تقوم بالبحث عن تطابق اسم المستخدم وكلمة المرور في جدول users
      */
-    public boolean checkUserCredentials(String username, String password) {
-        String sql = "SELECT * FROM users WHERE username = ? AND password = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, username);
-            pstmt.setString(2, password); 
-            try (ResultSet rs = pstmt.executeQuery()) {
-                // إذا وجد سجل مطابق، تعيد true، وإلا تعيد false
-                return rs.next(); 
+    // غيّر نوع الإرجاع من boolean إلى User
+public User checkUserCredentials(String username, String password) {
+    String sql = "SELECT id, username, role FROM users WHERE username = ? AND password = ?";
+    try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+        pstmt.setString(1, username);
+        pstmt.setString(2, password);
+        try (ResultSet rs = pstmt.executeQuery()) {
+            if (rs.next()) {
+                // إذا تم العثور على المستخدم، قم بإرجاع كائن User
+                return new User(rs.getInt("id"), rs.getString("username"), rs.getString("role"));
             }
-        } catch (SQLException e) {
-            System.err.println("خطأ أثناء التحقق من بيانات الدخول: " + e.getMessage());
-            return false;
         }
+    } catch (SQLException e) {
+        System.err.println("خطأ أثناء التحقق من بيانات الدخول: " + e.getMessage());
     }
+    return null; // إذا فشل التحقق، أرجع null
+}
+
+// عدّل دالة checkLogin لتستخدم الدالة الجديدة
+boolean checkLogin(String user, String pass) {
+    return checkUserCredentials(user, pass) != null;
+}
     
     public static class Installment {
         public final int id;
@@ -116,7 +123,21 @@ public class DatabaseManager {
         createNewTables();
         addStatusColumnIfMissing();
     }
+    
+    public void connect() {
+    try {
+        // تحميل درايفر SQLite
+        Class.forName("org.sqlite.JDBC");
+        // ربط الاتصال بملف قاعدة البيانات
+        connection = DriverManager.getConnection("jdbc:sqlite:inventory.db");
+        System.out.println("تم الاتصال بقاعدة البيانات بنجاح!");
+    } catch (Exception e) {
+        e.printStackTrace();
+        System.err.println("فشل الاتصال بقاعدة البيانات: " + e.getMessage());
+    }
+}
 
+/*
     public void connect() {
         try {
             Class.forName("org.sqlite.JDBC");
@@ -125,7 +146,7 @@ public class DatabaseManager {
             System.err.println("Database Connection Error: " + e.getMessage());
         }
     }
-
+*/
     public static Connection getConnection() throws SQLException {
         return DriverManager.getConnection(URL);
     }
@@ -164,7 +185,7 @@ public class DatabaseManager {
 
         // إضافة الوحدات الافتراضية
         String[] defaultUnits = {"قطعة", "علبة", "باكيت", "كرتونة","دستة", "طقم", "شريط", "درزن", "ربطة", "زوج", "صندوق", "كيس", "لفة"};
-        try (Statement stmt = conn.createStatement()) {
+        try (Statement stmt = connection.createStatement()) {
             for (String unit : defaultUnits) {
                 // نستخدم INSERT OR IGNORE لتجنب التكرار إذا كانت موجودة
                 stmt.execute("INSERT OR IGNORE INTO units (name) VALUES ('" + unit + "')");
@@ -175,7 +196,7 @@ public class DatabaseManager {
         }
 
 
-    try (Statement stmt = conn.createStatement()) {
+    try (Statement stmt = connection.createStatement()) {
         for(String sql : sqlCommands) stmt.execute(sql);
         System.out.println("تم إنشاء الجداول الموحدة بنجاح.");
     } catch (SQLException e) { 
@@ -184,7 +205,7 @@ public class DatabaseManager {
 }
 
     private void ensureColumnsExist() {
-        try (Statement stmt = conn.createStatement()) {
+        try (Statement stmt = connection.createStatement()) {
             // إضافة عمود paid_amount لجدول المبيعات إذا لم يكن موجوداً stmt.execute("ALTER TABLE sales ADD COLUMN paid_amount REAL DEFAULT 0") ;
             System.out.println("[تتبع] تم فحص وتحديث أعمدة قاعدة البيانات.") ;
         }
@@ -196,7 +217,7 @@ public class DatabaseManager {
    
     public double getTotalUnpaidInstallments() {
         String sql = "SELECT SUM(amount) FROM installments WHERE is_paid = 0";
-        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
+        try (Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
             if (rs.next()) return rs.getDouble(1);
         } catch (SQLException e) {
             System.err.println("Error fetching total unpaid installments: " + e.getMessage());
@@ -207,7 +228,7 @@ public class DatabaseManager {
     public boolean markInstallmentAsPaid(int installmentId) {
         String today = LocalDate.now().toString();
         String sql = "UPDATE installments SET is_paid = 1, payment_date = ? WHERE id = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, today);
             pstmt.setInt(2, installmentId);
             return pstmt.executeUpdate() > 0;
@@ -223,14 +244,14 @@ public class DatabaseManager {
     String updateCustomerSql = "UPDATE customers SET balance = balance + ? WHERE id = ?";
 
     try {
-        conn.setAutoCommit(false); // مهم جداً لضمان تناسق البيانات
+        connection.setAutoCommit(false); // مهم جداً لضمان تناسق البيانات
 
         int customerId = -1;
         double amount = 0;
         boolean oldIsPaid = false;
 
         // 1. جلب البيانات الحالية للقسط
-        try (PreparedStatement ps = conn.prepareStatement(selectSql)) {
+        try (PreparedStatement ps = connection.prepareStatement(selectSql)) {
             ps.setInt(1, installmentId);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
@@ -246,19 +267,19 @@ public class DatabaseManager {
         // إذا لم تتغير الحالة، لا نفعل شيئاً سوى تحديث التاريخ ربما
         if (oldIsPaid == newIsPaid) {
              // تحديث التاريخ فقط
-            try (PreparedStatement ps = conn.prepareStatement(updateInstSql)) {
+            try (PreparedStatement ps = connection.prepareStatement(updateInstSql)) {
                 ps.setString(1, paymentDate);
                 ps.setInt(2, newIsPaid ? 1 : 0);
                 ps.setInt(3, installmentId);
                 ps.executeUpdate();
             }
-            conn.commit();
-            conn.setAutoCommit(true);
+            connection.commit();
+            connection.setAutoCommit(true);
             return true;
         }
 
         // 2. تحديث جدول الأقساط
-        try (PreparedStatement ps = conn.prepareStatement(updateInstSql)) {
+        try (PreparedStatement ps = connection.prepareStatement(updateInstSql)) {
             ps.setString(1, paymentDate);
             ps.setInt(2, newIsPaid ? 1 : 0);
             ps.setInt(3, installmentId);
@@ -277,22 +298,22 @@ public class DatabaseManager {
         }
 
         if (customerId != -1 && balanceChange != 0) {
-            try (PreparedStatement ps = conn.prepareStatement(updateCustomerSql)) {
+            try (PreparedStatement ps = connection.prepareStatement(updateCustomerSql)) {
                 ps.setDouble(1, balanceChange);
                 ps.setInt(2, customerId);
                 ps.executeUpdate();
             }
         }
 
-        conn.commit();
+        connection.commit();
         return true;
 
     } catch (SQLException e) {
-        try { conn.rollback(); } catch (SQLException ex) {}
+        try { connection.rollback(); } catch (SQLException ex) {}
         System.err.println("Error updating installment status: " + e.getMessage());
         return false;
     } finally {
-        try { conn.setAutoCommit(true); } catch (SQLException e) {}
+        try { connection.setAutoCommit(true); } catch (SQLException e) {}
     }
 }
 
@@ -306,12 +327,12 @@ public class DatabaseManager {
     String customerNameSql = "SELECT name FROM customers WHERE id = ?";
 
     try {
-        conn.setAutoCommit(false); // بدء المعاملة
+        connection.setAutoCommit(false); // بدء المعاملة
 
         // --- أ: جلب اسم العميل ---
         String customerName = "عميل تقسيط";
         if (customerId > 0) {
-            try (PreparedStatement pstmt = conn.prepareStatement(customerNameSql)) {
+            try (PreparedStatement pstmt = connection.prepareStatement(customerNameSql)) {
                 pstmt.setInt(1, customerId);
                 ResultSet rs = pstmt.executeQuery();
                 if (rs.next()) {
@@ -322,7 +343,7 @@ public class DatabaseManager {
 
         // --- ب: حفظ رأس الفاتورة ---
         int saleId;
-        try (PreparedStatement pstmt = conn.prepareStatement(saleSql, Statement.RETURN_GENERATED_KEYS)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(saleSql, Statement.RETURN_GENERATED_KEYS)) {
             pstmt.setInt(1, customerId);
             pstmt.setString(2, customerName);
             pstmt.setDouble(3, totalAmount);
@@ -338,8 +359,8 @@ public class DatabaseManager {
         }
 
         // --- ج: حفظ الأصناف وتحديث المخزون ---
-        try (PreparedStatement itemPstmt = conn.prepareStatement(itemSql);
-             PreparedStatement stockPstmt = conn.prepareStatement(updateStockSql)) {
+        try (PreparedStatement itemPstmt = connection.prepareStatement(itemSql);
+             PreparedStatement stockPstmt = connection.prepareStatement(updateStockSql)) {
             for (Map.Entry<Integer, Integer> entry : cartItems.entrySet()) {
                 int productId = entry.getKey();
                 int qty = entry.getValue();
@@ -366,7 +387,7 @@ public class DatabaseManager {
 
         // --- د: حفظ الأقساط وحساب الدين ---
         double totalDebtToAdd = 0.0;
-        try (PreparedStatement pstmt = conn.prepareStatement(instSql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(instSql)) {
             for (Object[] row : installments) {
                 pstmt.setInt(1, saleId);
                 pstmt.setInt(2, customerId);
@@ -400,19 +421,19 @@ public class DatabaseManager {
 
         // --- هـ: تحديث مديونية العميل ---
         if (customerId > 0 && totalDebtToAdd > 0) {
-            try (PreparedStatement pstmt = conn.prepareStatement(updateCustomerSql)) {
+            try (PreparedStatement pstmt = connection.prepareStatement(updateCustomerSql)) {
                 pstmt.setDouble(1, totalDebtToAdd);
                 pstmt.setInt(2, customerId);
                 pstmt.executeUpdate();
             }
         }
 
-        conn.commit(); // اعتماد كل العمليات
+        connection.commit(); // اعتماد كل العمليات
         return true;
 
     } catch (SQLException e) {
         try {
-            if (conn != null) conn.rollback(); // التراجع عند الخطأ
+            if (connection != null) connection.rollback(); // التراجع عند الخطأ
         } catch (SQLException ex) {
             System.err.println("فشل التراجع عن العملية: " + ex.getMessage());
         }
@@ -421,7 +442,7 @@ public class DatabaseManager {
         return false;
     } finally {
         try {
-            if (conn != null) conn.setAutoCommit(true);
+            if (connection != null) connection.setAutoCommit(true);
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -430,7 +451,7 @@ public class DatabaseManager {
 
     public boolean updateProductQuantity(int productId, int quantityChange) {
     String sql = "UPDATE products SET quantity = quantity + ? WHERE id = ?" ;
-    try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+    try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
         pstmt.setInt(1, quantityChange) ;
         pstmt.setInt(2, productId) ;
         return pstmt.executeUpdate() > 0 ;
@@ -443,7 +464,7 @@ public class DatabaseManager {
 
     private double getProductPrice(int productId) {
         String sql = "SELECT sale_price FROM products WHERE id = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, productId);
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) return rs.getDouble("sale_price");
@@ -456,7 +477,7 @@ public class DatabaseManager {
         
     public boolean addProduct(String name, String category, String unit, int currentQuantity, double purchasePrice, double salePrice) {
         String sql = "INSERT INTO products(name, category, unit, current_quantity, purchase_price, sale_price) VALUES(?,?,?,?,?,?)";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, name); pstmt.setString(2, category); pstmt.setString(3, unit);
             pstmt.setInt(4, currentQuantity); pstmt.setDouble(5, purchasePrice); pstmt.setDouble(6, salePrice);
             pstmt.executeUpdate();
@@ -467,7 +488,7 @@ public class DatabaseManager {
     public List<Map<String, Object>> getAllProducts() {
         List<Map<String, Object>> productsList = new ArrayList<>();
         String sql = "SELECT id, name, category, unit, current_quantity, purchase_price, sale_price FROM products ORDER BY category, id";
-        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
+        try (Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
                 Map<String, Object> product = new HashMap<>();
                 product.put("id", rs.getInt("id")); product.put("name", rs.getString("name"));
@@ -482,7 +503,7 @@ public class DatabaseManager {
 
     public String getProductUnit(int id) {
         String sql = "SELECT unit FROM products WHERE id = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, id);
             try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) return rs.getString("unit"); }
         } catch (SQLException e) { System.err.println("Error fetching product unit: " + e.getMessage()); }
@@ -491,7 +512,7 @@ public class DatabaseManager {
 
     public boolean updateProduct(int id, String name, String category, String unit, int currentQuantity, double purchasePrice, double salePrice) {
         String sql = "UPDATE products SET name = ?, category = ?, unit = ?, current_quantity = ?, purchase_price = ?, sale_price = ? WHERE id = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, name); pstmt.setString(2, category); pstmt.setString(3, unit);
             pstmt.setInt(4, currentQuantity); pstmt.setDouble(5, purchasePrice); pstmt.setDouble(6, salePrice);
             pstmt.setInt(7, id);
@@ -502,7 +523,7 @@ public class DatabaseManager {
 
     public boolean deleteProduct(int id) {
         String sql = "DELETE FROM products WHERE id = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, id);
             return pstmt.executeUpdate() > 0;
         } catch (SQLException e) { System.err.println("Error deleting product: " + e.getMessage()); return false; }
@@ -511,7 +532,7 @@ public class DatabaseManager {
     /*
     public boolean checkUserCredentials(String username, String password) {
         String sql = "SELECT * FROM users WHERE username = ? AND password = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, username);
             pstmt.setString(2, password); 
             try (ResultSet rs = pstmt.executeQuery()) {
@@ -525,7 +546,7 @@ public class DatabaseManager {
 */
     public boolean addUser(String username, String password, String role) {
         String sql = "INSERT INTO users(username, password, role) VALUES(?, ?, ?)";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, username);
             pstmt.setString(2, password);
             pstmt.setString(3, role);
@@ -537,7 +558,7 @@ public class DatabaseManager {
     }
 
     public boolean isUsersTableEmpty() {
-        try (Statement stmt = conn.createStatement();
+        try (Statement stmt = connection.createStatement();
              ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM users")) {
             if (rs.next()) {
                 return rs.getInt(1) == 0;
@@ -548,37 +569,39 @@ public class DatabaseManager {
         return true;
     }
 
-    public List<String[]> getAllUsers() {
-        List<String[]> users = new ArrayList<>();
-        try (Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery("SELECT id, username, role FROM users")) {
-            while (rs.next()) {
-                users.add(new String[]{
-                    String.valueOf(rs.getInt("id")),
-                    rs.getString("username"),
-                    rs.getString("role")
-                });
-            }
-        } catch (SQLException e) { e.printStackTrace(); }
-        return users;
-    }
+    // غيّر نوع الإرجاع من List<String[]> إلى List<User>
+public List<User> getAllUsers() {
+    List<User> users = new ArrayList<>();
+    try (Statement stmt = connection.createStatement();
+         ResultSet rs = stmt.executeQuery("SELECT id, username, role FROM users")) {
+        while (rs.next()) {
+            users.add(new User(
+                rs.getInt("id"),
+                rs.getString("username"),
+                rs.getString("role")
+            ));
+        }
+    } catch (SQLException e) { e.printStackTrace(); }
+    return users;
+}
+
 
     public boolean deleteUser(int id) {
-        try (PreparedStatement pstmt = conn.prepareStatement("DELETE FROM users WHERE id = ?")) {
+        try (PreparedStatement pstmt = connection.prepareStatement("DELETE FROM users WHERE id = ?")) {
             pstmt.setInt(1, id);
             return pstmt.executeUpdate() > 0;
         } catch (SQLException e) { return false; }
     }
 
     public int getLowStockCount() {
-        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery("SELECT COUNT(id) FROM products WHERE current_quantity <= 5 AND current_quantity > 0")) {
+        try (Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery("SELECT COUNT(id) FROM products WHERE current_quantity <= 5 AND current_quantity > 0")) {
             if (rs.next()) return rs.getInt(1);
         } catch (SQLException e) { System.err.println("Error getting low stock count: " + e.getMessage()); }
         return 0;
     }
 
     public int getProductCount() {
-        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery("SELECT COUNT(id) FROM products")) {
+        try (Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery("SELECT COUNT(id) FROM products")) {
             if (rs.next()) return rs.getInt(1);
         } catch (SQLException e) { System.err.println("Error getting product count: " + e.getMessage()); }
         return 0;
@@ -586,7 +609,7 @@ public class DatabaseManager {
 
     public double getTotalSalesByDate(String date) {
         String sql = "SELECT SUM(total_amount) FROM Sales WHERE sale_date = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, date);
             try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) return rs.getDouble(1); }
         } catch (SQLException e) { System.err.println("Error getting total sales by date: " + e.getMessage()); }
@@ -618,7 +641,7 @@ public class DatabaseManager {
         ORDER BY s.id DESC
     """;
 
-    try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
+    try (Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
         while (rs.next()) {
             double total = rs.getDouble("calculated_total");
             
@@ -637,7 +660,7 @@ public class DatabaseManager {
 
     // دالة مساعدة
     private double getInstallmentsTotal(int saleId) {
-        try (PreparedStatement pstmt = conn.prepareStatement("SELECT SUM(amount) FROM Installments WHERE sale_id = ?")) {
+        try (PreparedStatement pstmt = connection.prepareStatement("SELECT SUM(amount) FROM Installments WHERE sale_id = ?")) {
             pstmt.setInt(1, saleId);
             ResultSet rs = pstmt.executeQuery();
             if (rs.next()) return rs.getDouble(1);
@@ -664,7 +687,7 @@ public class DatabaseManager {
             WHERE s.id = ?
         """;
 
-        try (PreparedStatement pstmt = conn.prepareStatement(query)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
             pstmt.setInt(1, saleId);
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
@@ -681,7 +704,7 @@ public class DatabaseManager {
      private double calculateRealTotal(int saleId, double originalTotal) {
             // نحسب مجموع الأقساط لهذه البيعة
             double installmentsSum = 0;
-            try (PreparedStatement pstmt = conn.prepareStatement("SELECT SUM(amount) FROM Installments WHERE sale_id = ?")) {
+            try (PreparedStatement pstmt = connection.prepareStatement("SELECT SUM(amount) FROM Installments WHERE sale_id = ?")) {
                 pstmt.setInt(1, saleId);
                 ResultSet rs = pstmt.executeQuery();
                 if (rs.next()) {
@@ -720,7 +743,7 @@ public class DatabaseManager {
 
             // نحسب إجمالي سعر المنتجات (سعر الوحدة * الكمية) من جدول SaleItems
             double productsTotal = 0;
-            try (PreparedStatement pstmt = conn.prepareStatement("SELECT SUM(total_price) FROM SaleItems WHERE sale_id = ?")) {
+            try (PreparedStatement pstmt = connection.prepareStatement("SELECT SUM(total_price) FROM SaleItems WHERE sale_id = ?")) {
                 pstmt.setInt(1, saleId);
                 ResultSet rs = pstmt.executeQuery();
                 if (rs.next()) {
@@ -742,7 +765,7 @@ public class DatabaseManager {
                      "FROM Sales s " +
                      "LEFT JOIN customers c ON s.customer_id = c.id " +
                      "WHERE s.id = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, saleId);
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
@@ -764,7 +787,7 @@ public class DatabaseManager {
 
     public double getCustomerPriorBalance(int customerId) {
         String sql = "SELECT balance FROM customers WHERE id = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, customerId);
             try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) return rs.getDouble("balance"); }
         } catch (SQLException e) { System.err.println("Error fetching customer balance: " + e.getMessage()); }
@@ -774,7 +797,7 @@ public class DatabaseManager {
     public List<List<Object>> getSaleItems(int saleId) {
         List<List<Object>> items = new ArrayList<>();
         String sql = "SELECT product_name, product_unit, quantity, sale_price, subtotal FROM sale_items WHERE sale_id = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, saleId);
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) items.add(Arrays.asList(rs.getString("product_name"), rs.getString("product_unit"), rs.getInt("quantity"), rs.getDouble("sale_price"), rs.getDouble("subtotal")));
@@ -785,7 +808,7 @@ public class DatabaseManager {
 
     public ProductForPOS getProductByIdForPOS(int productId) {
         String sql = "SELECT id, name, unit, sale_price, current_quantity FROM products WHERE id = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, productId);
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) return new ProductForPOS(rs.getInt("id"), rs.getString("name"), rs.getString("unit"), rs.getDouble("sale_price"), rs.getInt("current_quantity"));
@@ -797,7 +820,7 @@ public class DatabaseManager {
     public List<ProductForPOS> getProductsByName(String partialName) {
         List<ProductForPOS> products = new ArrayList<>();
         String sql = "SELECT id, name, unit, sale_price, current_quantity FROM products WHERE name LIKE ? ORDER BY name";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, partialName + "%");
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) products.add(new ProductForPOS(rs.getInt("id"), rs.getString("name"), rs.getString("unit"), rs.getDouble("sale_price"), rs.getInt("current_quantity")));
@@ -814,10 +837,10 @@ public class DatabaseManager {
         String sqlSale = "INSERT INTO Sales(sale_date, customer_id, customer_name, total_amount, amount_paid) VALUES(?, ?, ?, ?, ?)";
 
         try {
-            conn.setAutoCommit(false); // Begin Transaction
+            connection.setAutoCommit(false); // Begin Transaction
 
             // 1. Insert Sale Record
-            try (PreparedStatement pstmtSale = conn.prepareStatement(sqlSale, Statement.RETURN_GENERATED_KEYS)) {
+            try (PreparedStatement pstmtSale = connection.prepareStatement(sqlSale, Statement.RETURN_GENERATED_KEYS)) {
                 pstmtSale.setString(1, saleDate);
                 if (customerId == -1) pstmtSale.setNull(2, java.sql.Types.INTEGER);
                 else pstmtSale.setInt(2, customerId);
@@ -835,7 +858,7 @@ public class DatabaseManager {
             String sqlItem = "INSERT INTO sale_items(sale_id, product_id, product_name, quantity, sale_price, subtotal, product_unit) VALUES(?, ?, ?, ?, ?, ?, ?)";
             String sqlUpdateStock = "UPDATE products SET current_quantity = current_quantity - ? WHERE id = ?";
 
-            try (PreparedStatement pstmtItem = conn.prepareStatement(sqlItem); PreparedStatement pstmtUpdateStock = conn.prepareStatement(sqlUpdateStock)) {
+            try (PreparedStatement pstmtItem = connection.prepareStatement(sqlItem); PreparedStatement pstmtUpdateStock = connection.prepareStatement(sqlUpdateStock)) {
                 for (Map.Entry<Integer, Integer> entry : cartItems.entrySet()) {
                     int productId = entry.getKey();
                     int quantitySold = entry.getValue();
@@ -868,7 +891,7 @@ public class DatabaseManager {
                      // Add the remaining debt (or credit) to the customer balance
                      // balance = balance + (total - paid)
                      String updateBalanceSql = "UPDATE customers SET balance = balance + ? WHERE id = ?";
-                     try(PreparedStatement psBalance = conn.prepareStatement(updateBalanceSql)) {
+                     try(PreparedStatement psBalance = connection.prepareStatement(updateBalanceSql)) {
                          psBalance.setDouble(1, remaining);
                          psBalance.setInt(2, customerId);
                          psBalance.executeUpdate();
@@ -876,14 +899,14 @@ public class DatabaseManager {
                 }
             }
 
-            conn.commit(); // Commit Transaction
+            connection.commit(); // Commit Transaction
 
         } catch (SQLException e) {
             System.err.println("Transaction failed: " + e.getMessage());
-            try { if (conn != null) conn.rollback(); } catch (SQLException ex) { System.err.println("Rollback failed: " + ex.getMessage()); }
+            try { if (connection != null) connection.rollback(); } catch (SQLException ex) { System.err.println("Rollback failed: " + ex.getMessage()); }
             return -1;
         } finally {
-            try { if (conn != null) conn.setAutoCommit(true); } catch (SQLException e) { System.err.println("Error resetting auto-commit: " + e.getMessage()); }
+            try { if (connection != null) connection.setAutoCommit(true); } catch (SQLException e) { System.err.println("Error resetting auto-commit: " + e.getMessage()); }
         }
         return saleId;
     }
@@ -898,10 +921,10 @@ public class DatabaseManager {
          String updateCustomerSql = "UPDATE customers SET balance = balance - ? WHERE id = ?";
          
          try {
-             conn.setAutoCommit(false);
+             connection.setAutoCommit(false);
              
              int customerId = -1;
-             try(PreparedStatement ps = conn.prepareStatement(getSaleSql)) {
+             try(PreparedStatement ps = connection.prepareStatement(getSaleSql)) {
                  ps.setInt(1, saleId);
                  try(ResultSet rs = ps.executeQuery()) {
                      if(rs.next()) {
@@ -914,7 +937,7 @@ public class DatabaseManager {
              }
              
              // Update Sale
-             try(PreparedStatement ps = conn.prepareStatement(updateSaleSql)) {
+             try(PreparedStatement ps = connection.prepareStatement(updateSaleSql)) {
                  ps.setDouble(1, paymentAmount);
                  ps.setInt(2, saleId);
                  ps.executeUpdate();
@@ -922,41 +945,41 @@ public class DatabaseManager {
              
              // Update Customer Balance
              if(customerId != -1) {
-                 try(PreparedStatement ps = conn.prepareStatement(updateCustomerSql)) {
+                 try(PreparedStatement ps = connection.prepareStatement(updateCustomerSql)) {
                      ps.setDouble(1, paymentAmount); // Reduce debt
                      ps.setInt(2, customerId);
                      ps.executeUpdate();
                  }
              }
              
-             conn.commit();
+             connection.commit();
              return true;
          } catch(SQLException e) {
-             try { conn.rollback(); } catch(SQLException ex) {}
+             try { connection.rollback(); } catch(SQLException ex) {}
              e.printStackTrace();
              return false;
          } finally {
-             try { conn.setAutoCommit(true); } catch(SQLException e) {}
+             try { connection.setAutoCommit(true); } catch(SQLException e) {}
          }
     }
 
     public Vector<String> getAllCategories() {
         Vector<String> cats = new Vector<>();
-        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery("SELECT category_name FROM categories ORDER BY category_name")) {
+        try (Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery("SELECT category_name FROM categories ORDER BY category_name")) {
             while (rs.next()) cats.add(rs.getString("category_name"));
         } catch (SQLException e) { System.err.println("Error fetching categories: " + e.getMessage()); }
         return cats;
     }
 
     public boolean addCategory(String categoryName) {
-        try (PreparedStatement pstmt = conn.prepareStatement("INSERT INTO categories(category_name) VALUES(?)")) {
+        try (PreparedStatement pstmt = connection.prepareStatement("INSERT INTO categories(category_name) VALUES(?)")) {
             pstmt.setString(1, categoryName);
             return pstmt.executeUpdate() > 0;
         } catch (SQLException e) { return false; }
     }
 
     public boolean deleteCategory(String categoryName) {
-        try (PreparedStatement pstmt = conn.prepareStatement("DELETE FROM categories WHERE category_name = ?")) {
+        try (PreparedStatement pstmt = connection.prepareStatement("DELETE FROM categories WHERE category_name = ?")) {
             pstmt.setString(1, categoryName);
             return pstmt.executeUpdate() > 0;
         } catch (SQLException e) { return false; }
@@ -964,7 +987,7 @@ public class DatabaseManager {
 
     public Vector<String> getAllUnits() {
         Vector<String> units = new Vector<>();
-        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery("SELECT name FROM units ORDER BY name")) {
+        try (Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery("SELECT name FROM units ORDER BY name")) {
             while (rs.next()) units.add(rs.getString("name"));
         } catch (SQLException e) { System.err.println("Error fetching units: " + e.getMessage()); }
         return units;
@@ -974,7 +997,7 @@ public class DatabaseManager {
     List<Customer> customers = new ArrayList<>();
     // --- بداية التعديل ---
     // إضافة شرط "WHERE status = 1" لجلب العملاء النشطين فقط
-    try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery("SELECT id, name, balance FROM customers WHERE status = 1 ORDER BY name ASC")) {
+    try (Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery("SELECT id, name, balance FROM customers WHERE status = 1 ORDER BY name ASC")) {
     // --- نهاية التعديل ---
         while (rs.next()) customers.add(new Customer(rs.getInt("id"), rs.getString("name"), rs.getDouble("balance")));
     } catch (SQLException e) { 
@@ -987,7 +1010,7 @@ public class DatabaseManager {
     List<Map<String, Object>> list = new ArrayList<>();
     // تم استخدام استعلام يجلب كل الأعمدة بما في ذلك عمود "status"
     String sql = "SELECT id, name, address, phone, balance, transaction_count, status FROM customers ORDER BY id DESC";
-    try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
+    try (Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
         while (rs.next()) {
             Map<String, Object> c = new HashMap<>();
             c.put("id", rs.getInt("id")); 
@@ -1013,7 +1036,7 @@ public class DatabaseManager {
 
     public void addStatusColumnIfMissing() {
         String sql = "ALTER TABLE customers ADD COLUMN status INTEGER DEFAULT 1";
-        try (Statement stmt = conn.createStatement()) {
+        try (Statement stmt = connection.createStatement()) {
             stmt.execute(sql);
             System.out.println("تم إضافة عمود status بنجاح.");
         } catch (SQLException e) {
@@ -1029,7 +1052,7 @@ public class DatabaseManager {
     // تم تعديل الاستعلام ليشمل عمود "status" ويعطيه القيمة 1 (نشط) بشكل افتراضي
     String sql = "INSERT INTO customers(name, address, phone, balance, transaction_count, status) VALUES(?,?,?,?,?,1)" ;
     // --- نهاية التعديل ---
-    try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+    try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
         pstmt.setString(1, name) ;
         pstmt.setString(2, address) ;
         pstmt.setString(3, phone) ;
@@ -1045,7 +1068,7 @@ public class DatabaseManager {
  
     public boolean updateCustomer(int id, String name, String address, String phone, double balance) {
         String sql = "UPDATE customers SET name=?, address=?, phone=?, balance=? WHERE id=?" ;
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, name) ;
             pstmt.setString(2, address) ;
             pstmt.setString(3, phone) ;
@@ -1058,10 +1081,50 @@ public class DatabaseManager {
             return false ;
         }
     }
+    public static class User {
+    public final int id;
+    public final String username;
+    public final String role;
+
+    public User(int id, String username, String role) {
+        this.id = id;
+        this.username = username;
+        this.role = role;
+    }
+
+    @Override
+    public String toString() {
+        return username + " (" + role + ")"; // عرض مناسب في ComboBox
+    }
+}
+
     
+    public String getUserRole(String username) {
+    String role = null;
+    try {
+        String sql = "SELECT role FROM users WHERE username = ?";
+        PreparedStatement stmt = connection.prepareStatement(sql);
+        stmt.setString(1, username);
+        ResultSet rs = stmt.executeQuery();
+        if (rs.next()) {
+            role = rs.getString("role");
+        }
+        rs.close();
+        stmt.close();
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+    return role;
+}
+
+    public boolean isSuperAdmin(String username) {
+    String role = getUserRole(username);
+    return role != null && role.equals("super_admin");
+}
+
     public void updateCustomerStatus(int customerId, int status) {
     String sql = "UPDATE customers SET status = ? WHERE id = ?";
-    try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+    try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
         pstmt.setInt(1, status);
         pstmt.setInt(2, customerId);
         pstmt.executeUpdate();
@@ -1073,7 +1136,7 @@ public class DatabaseManager {
     public boolean toggleAllCustomerStatuses() {
     // استعلام ذكي لعكس الحالة: 1 يصبح 0، و 0 يصبح 1
     String sql = "UPDATE customers SET status = 1 - status"; 
-    try (Statement stmt = conn.createStatement()) {
+    try (Statement stmt = connection.createStatement()) {
         stmt.executeUpdate(sql);
         return true;
     } catch (SQLException e) {
@@ -1084,7 +1147,7 @@ public class DatabaseManager {
   
     public boolean deleteCustomer(int id) {
         String sql = "DELETE FROM customers WHERE id=?" ;
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, id) ;
             return pstmt.executeUpdate() > 0 ;
         }
@@ -1095,19 +1158,34 @@ public class DatabaseManager {
     }
     
     public boolean isCustomerNameExists(String name) {
-        try (PreparedStatement pstmt = conn.prepareStatement("SELECT 1 FROM customers WHERE name = ? LIMIT 1")) {
+        try (PreparedStatement pstmt = connection.prepareStatement("SELECT 1 FROM customers WHERE name = ? LIMIT 1")) {
             pstmt.setString(1, name);
             try (ResultSet rs = pstmt.executeQuery()) { return rs.next(); }
         } catch (SQLException e) { System.err.println("Error checking customer name existence: " + e.getMessage()); }
         return false;
     }
-
+/*
     public void close() {
-        try { if (conn != null) conn.close(); } catch (SQLException e) { System.err.println("Error closing connection: " + e.getMessage()); }
+        try { 
+            if (connection != null) connection.close(); 
+        } catch (SQLException e) {
+            System.err.println("Error closing connectionection: " + e.getMessage()); }
     }
+    */
+    public void close() {
+    try {
+        if (connection != null && !connection.isClosed()) {
+            connection.close();
+            System.out.println("تم إغلاق الاتصال بقاعدة البيانات.");
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+}
+
     
     private void checkAndCreateTables() {
-    try (Statement stmt = conn.createStatement()) {
+    try (Statement stmt = connection.createStatement()) {
         // إنشاء الجداول الأساسية
         stmt.execute("CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)");
         stmt.execute("CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, category_id INTEGER, price REAL, stock INTEGER, unit TEXT, FOREIGN KEY(category_id) REFERENCES categories(id))");
@@ -1136,7 +1214,7 @@ public class DatabaseManager {
     // تم إضافة شرط "WHERE status = 1" هنا أيضًا
     String sql = "SELECT id, name, balance FROM customers WHERE status = 1 ORDER BY name ASC" ;
     // --- نهاية التعديل ---
-    try (Statement stmt = conn.createStatement() ;
+    try (Statement stmt = connection.createStatement() ;
     ResultSet rs = stmt.executeQuery(sql)) {
         while (rs.next()) {
             list.add(new Customer( rs.getInt("id"), rs.getString("name"), rs.getDouble("balance") )) ;
@@ -1155,7 +1233,7 @@ public class DatabaseManager {
                      "FROM installments i " +
                      "JOIN customers c ON i.customer_id = c.id " +
                      "ORDER BY i.due_date ASC";
-        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
+        try (Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
                 list.add(new Installment(
                     rs.getInt("id"),
@@ -1202,7 +1280,7 @@ public class DatabaseManager {
         // تم إضافة salesman في أسماء الأعمدة والقيم
         String sql = "REPLACE INTO app_settings (id, company_name, slogan, phone1, phone2, salesman, logo) VALUES (1, ?, ?, ?, ?, ?, ?)";
         
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, name);
             pstmt.setString(2, slogan);
             pstmt.setString(3, phone1);
@@ -1219,7 +1297,7 @@ public class DatabaseManager {
     // 2. دالة الجلب (المصححة)
     public BusinessInfo getBusinessInfo() {
         String sql = "SELECT * FROM app_settings WHERE id = 1";
-        try (Statement stmt = conn.createStatement();
+        try (Statement stmt = connection.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
             if (rs.next()) {
                 return new BusinessInfo(
@@ -1238,7 +1316,7 @@ public class DatabaseManager {
     }
 // 1. التحقق هل البيع تقسيط أم لا
 public boolean isInstallmentSale(int saleId) {
-    try (PreparedStatement pstmt = conn.prepareStatement("SELECT 1 FROM installments WHERE sale_id = ? LIMIT 1")) {
+    try (PreparedStatement pstmt = connection.prepareStatement("SELECT 1 FROM installments WHERE sale_id = ? LIMIT 1")) {
         pstmt.setInt(1, saleId);
         try (ResultSet rs = pstmt.executeQuery()) { return rs.next(); }
     } catch (SQLException e) { return false; }
@@ -1246,7 +1324,7 @@ public boolean isInstallmentSale(int saleId) {
 
 // 2. جلب قيمة المقدم
 public double getSaleDownPayment(int saleId) {
-    try (PreparedStatement pstmt = conn.prepareStatement("SELECT amount_paid FROM Sales WHERE id = ?")) {
+    try (PreparedStatement pstmt = connection.prepareStatement("SELECT amount_paid FROM Sales WHERE id = ?")) {
         pstmt.setInt(1, saleId);
         try (ResultSet rs = pstmt.executeQuery()) { if(rs.next()) return rs.getDouble(1); }
     } catch (SQLException e) { }
@@ -1257,7 +1335,7 @@ public double getSaleDownPayment(int saleId) {
 public List<Installment> getInstallmentsBySaleId(int saleId) {
     List<Installment> list = new ArrayList<>();
     String sql = "SELECT id, sale_id, customer_id, amount, due_date, payment_date, is_paid FROM installments WHERE sale_id = ? ORDER BY due_date";
-    try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+    try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
         pstmt.setInt(1, saleId);
         ResultSet rs = pstmt.executeQuery();
         while (rs.next()) {

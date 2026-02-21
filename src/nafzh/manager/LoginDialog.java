@@ -14,23 +14,20 @@ public class LoginDialog extends JDialog {
     private JTextField userField;
     private JPasswordField passField;
     private boolean isAuthenticated = false;
-    private NafzhManager parentManager; // إضافة مرجع للمدير الرئيسي
+    private NafzhManager parentManager;
 
-    
-    // الألوان المستخدمة في التصميم الداكن
-    private final Color DARK_BG = new Color(44, 62, 80);       // خلفية داكنة
-    private final Color INPUT_BG = new Color(255, 255, 255);   // خلفية الحقول
-    private final Color ACCENT_BLUE = new Color(20, 90, 50); // لون زر الدخول
-    private final Color ACCENT_GREEN = new Color(20, 90, 50);  // لون زر الإنشاء (أخضر غامق)
-    private final Color TEXT_COLOR = Color.WHITE;              // لون النصوص
+    private final Color DARK_BG = new Color(44, 62, 80);
+    private final Color INPUT_BG = new Color(255, 255, 255);
+    private final Color ACCENT_BLUE = new Color(20, 90, 50);
+    private final Color ACCENT_GREEN = new Color(20, 90, 50);
+    private final Color TEXT_COLOR = Color.WHITE;
 
     public LoginDialog(Frame parent, DatabaseManager dbManager) {
         super(parent, "تسجيل الدخول - Nafzh Manager", true);
         this.dbManager = dbManager;
-        // نتحقق إذا كان الـ parent هو فعلاً NafzhManager لنتمكن من استدعاء الـ Toast 
-        if (parent instanceof NafzhManager) { 
-            this.parentManager = (NafzhManager) parent; }
-
+        if (parent instanceof NafzhManager) {
+            this.parentManager = (NafzhManager) parent;
+        }
         initializeUI();
     }
 
@@ -43,21 +40,19 @@ public class LoginDialog extends JDialog {
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
 
         boolean isFirstRun = dbManager.isUsersTableEmpty();
-        String titleText = isFirstRun ? "إنشاء حساب المدير" : "تسجيل الدخول";
+        String titleText = isFirstRun ? "إنشاء حساب السوبر أدمن" : "تسجيل الدخول";
         String subTitleText = isFirstRun ? "مرحباً بك في أول تشغيل للنظام" : "مرحباً بعودتك";
 
-        // --- اللوحة الرئيسية ---
         JPanel mainPanel = new JPanel();
         mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
         mainPanel.setBackground(DARK_BG);
         mainPanel.setBorder(new EmptyBorder(20, 40, 20, 40));
 
-        // 1. العنوان
         JLabel titleLabel = new JLabel(titleText);
         titleLabel.setFont(getCairoFont(20f).deriveFont(Font.BOLD));
         titleLabel.setForeground(TEXT_COLOR);
         titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        
+
         JLabel subTitleLabel = new JLabel(subTitleText);
         subTitleLabel.setFont(getCairoFont(12f));
         subTitleLabel.setForeground(new Color(200, 200, 200));
@@ -67,107 +62,77 @@ public class LoginDialog extends JDialog {
         mainPanel.add(subTitleLabel);
         mainPanel.add(Box.createVerticalStrut(30));
 
-        // 2. حقل اسم المستخدم
         JPanel userPanel = createInputPanel("اسم المستخدم", false);
         userField = (JTextField) userPanel.getClientProperty("field");
-        
-        // --- إضافة فلتر لمنع الحروف العربية ---
         userField.addKeyListener(new KeyAdapter() {
             @Override
             public void keyTyped(KeyEvent e) {
                 char c = e.getKeyChar();
-                // السماح فقط بالحروف الإنجليزية، الأرقام، المسافة، وبعض الرموز الخاصة
-                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '.' || c == KeyEvent.VK_BACK_SPACE || c == KeyEvent.VK_DELETE)) {
-                    e.consume(); // تجاهل الحرف المكتوب
-                    getToolkit().beep(); // صوت تنبيه خفيف
+                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                      (c >= '0' && c <= '9') || c == '_' || c == '.' ||
+                      c == KeyEvent.VK_BACK_SPACE || c == KeyEvent.VK_DELETE)) {
+                    e.consume();
+                    getToolkit().beep();
                 }
             }
         });
-        
         mainPanel.add(userPanel);
         mainPanel.add(Box.createVerticalStrut(15));
 
-        // 3. حقل كلمة المرور
         JPanel passPanelWrapper = createInputPanel("كلمة المرور", true);
         passField = (JPasswordField) passPanelWrapper.getClientProperty("field");
         mainPanel.add(passPanelWrapper);
         mainPanel.add(Box.createVerticalStrut(30));
 
-        // 4. الأزرار
         JButton actionBtn = new JButton(isFirstRun ? "إنشاء الحساب" : "دخول");
         styleButton(actionBtn, isFirstRun ? ACCENT_GREEN : ACCENT_BLUE);
-        
+
         JButton closeBtn = new JButton("خروج");
-        styleButton(closeBtn, new Color(192, 57, 43)); // أحمر
+        styleButton(closeBtn, new Color(192, 57, 43));
 
         JPanel btnPanel = new JPanel(new GridLayout(1, 2, 15, 0));
         btnPanel.setOpaque(false);
-        // الترتيب حسب الاتجاه RTL: الزر الأيمن هو الخروج، الأيسر هو الدخول
-        btnPanel.add(closeBtn); 
+        btnPanel.add(closeBtn);
         btnPanel.add(actionBtn);
-        
+
         mainPanel.add(btnPanel);
         add(mainPanel, BorderLayout.CENTER);
 
-        // --- منطق زر الدخول/الإنشاء ---
-     actionBtn.addActionListener(e -> {
+        actionBtn.addActionListener(e -> {
             String user = userField.getText().trim();
             String pass = new String(passField.getPassword()).trim();
 
-            // الحصول على مرجع للمدير الرئيسي لاستدعاء الـ Toast
-            NafzhManager parent = null;
-            if (getParent() instanceof NafzhManager) {
-                parent = (NafzhManager) getParent();
-            }
-
-            // 1. التحقق من الحقول الفارغة
             if (user.isEmpty() || pass.isEmpty()) {
-                if (parent != null) {
-                    parent.showToast("يرجى ملء جميع الحقول", true);
-                } else {
-                    JOptionPane.showMessageDialog(this, "يرجى ملء جميع الحقول", "تنبيه", JOptionPane.WARNING_MESSAGE);
-                }
+                if (parentManager != null) parentManager.showToast("يرجى ملء كافة الحقول", true);
                 return;
             }
 
-            // 2. منطق التشغيل الأول (إنشاء حساب)
             if (isFirstRun) {
                 if (pass.length() < 6) {
-                    if (parent != null) {
-                        parent.showToast("كلمة المرور ضعيفة! (6 أحرف على الأقل)", true);
-                    } else {
-                        JOptionPane.showMessageDialog(this, "كلمة المرور ضعيفة!", "تنبيه أمني", JOptionPane.WARNING_MESSAGE);
-                    }
+                    if (parentManager != null) parentManager.showToast("كلمة المرور يجب أن تكون 6 أحرف فأكثر", true);
                     return;
                 }
-
-                if (dbManager.addUser(user, pass, "admin")) {
-                    if (parent != null) {
-                        parent.showToast("تم إنشاء حساب المدير بنجاح!");
-                    }
-                    isAuthenticated = true;
-                    dispose();
-                } else {
-                    if (parent != null) {
-                        parent.showToast("حدث خطأ أثناء إنشاء الحساب", true);
+                
+                if (dbManager.addUser(user, pass, "super_admin")) {
+                    DatabaseManager.User superAdminUser = dbManager.checkUserCredentials(user, pass);
+                    if (superAdminUser != null) {
+                        NafzhManager.setCurrentUser(superAdminUser.id, superAdminUser.username, superAdminUser.role);
+                        isAuthenticated = true;
+                        dispose();
                     } else {
-                        JOptionPane.showMessageDialog(this, "حدث خطأ أثناء الإنشاء");
+                        if (parentManager != null) parentManager.showToast("حدث خطأ أثناء تسجيل الدخول التلقائي", true);
                     }
+                } else {
+                    if (parentManager != null) parentManager.showToast("فشل إنشاء حساب السوبر أدمن", true);
                 }
-            } 
-            // 3. منطق تسجيل الدخول العادي
-            else {
-                // ملاحظة: تأكد أن الدالة في DatabaseManager اسمها authenticateUser أو validateLogin
-                // إذا كان اسمها مختلفاً، قم بتغيير checkLogin للاسم الصحيح لديك
-                if (dbManager.checkLogin(user, pass)) { 
+            } else {
+                DatabaseManager.User authenticatedUser = dbManager.checkUserCredentials(user, pass);
+                if (authenticatedUser != null) {
+                    NafzhManager.setCurrentUser(authenticatedUser.id, authenticatedUser.username, authenticatedUser.role);
                     isAuthenticated = true;
                     dispose();
                 } else {
-                    if (parent != null) {
-                        parent.showToast("بيانات الدخول غير صحيحة", true);
-                    } else {
-                        JOptionPane.showMessageDialog(this, "خطأ في تسجيل الدخول");
-                    }
+                    if (parentManager != null) parentManager.showToast("بيانات الدخول غير صحيحة", true);
                 }
             }
         });
@@ -176,23 +141,18 @@ public class LoginDialog extends JDialog {
         getRootPane().setDefaultButton(actionBtn);
     }
 
-    // --- دوال مساعدة للتصميم ---
     private JPanel createInputPanel(String labelText, boolean isPassword) {
         JPanel panel = new JPanel(new BorderLayout(0, 5));
         panel.setOpaque(false);
         panel.setAlignmentX(Component.CENTER_ALIGNMENT);
         panel.setMaximumSize(new Dimension(400, 60));
-        
-        // --- التعديل: ضبط اتجاه اللوحة لليمين لضمان ظهور العنوان يميناً ---
         panel.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
         JLabel label = new JLabel(labelText);
         label.setFont(getCairoFont(12f));
         label.setForeground(TEXT_COLOR);
-        // محاذاة النص لليمين
         label.setHorizontalAlignment(SwingConstants.RIGHT);
-        
-        // حاوية الحقل
+
         JPanel fieldContainer = new JPanel(new BorderLayout());
         fieldContainer.setBackground(INPUT_BG);
         fieldContainer.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5));
@@ -201,22 +161,17 @@ public class LoginDialog extends JDialog {
         if (isPassword) {
             JPasswordField pf = new JPasswordField();
             pf.setEchoChar('•');
-            
             JToggleButton eyeBtn = new JToggleButton("👁");
             eyeBtn.setContentAreaFilled(false);
             eyeBtn.setBorderPainted(false);
             eyeBtn.setFocusPainted(false);
             eyeBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
             eyeBtn.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 16));
-            
             eyeBtn.addActionListener(e -> {
-                if (eyeBtn.isSelected()) pf.setEchoChar((char) 0); 
+                if (eyeBtn.isSelected()) pf.setEchoChar((char) 0);
                 else pf.setEchoChar('•');
             });
-            
-            // --- التعديل: وضع زر العين في اليمين (EAST) ---
-            // بما أن الحاوية ليس لها اتجاه محدد (افتراضياً LTR)، فإن EAST يعني اليمين.
-            fieldContainer.add(eyeBtn, BorderLayout.EAST); 
+            fieldContainer.add(eyeBtn, BorderLayout.EAST);
             field = pf;
         } else {
             field = new JTextField();
@@ -225,14 +180,11 @@ public class LoginDialog extends JDialog {
         field.setBorder(null);
         field.setFont(getCairoFont(14f));
         field.setBackground(INPUT_BG);
-        // --- التعديل: إجبار الكتابة من اليسار لليمين داخل الحقل ---
         field.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
-        
+
         fieldContainer.add(field, BorderLayout.CENTER);
-        
         panel.add(label, BorderLayout.NORTH);
         panel.add(fieldContainer, BorderLayout.CENTER);
-        
         panel.putClientProperty("field", field);
         return panel;
     }
@@ -251,4 +203,5 @@ public class LoginDialog extends JDialog {
     }
 
     public boolean isAuthenticated() { return isAuthenticated; }
+    public String getUser() { return userField.getText().trim(); }
 }

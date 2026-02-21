@@ -21,6 +21,9 @@ import javax.swing.JFileChooser;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
 public class NafzhManager extends JFrame {
+    private static String currentRole = "super_admin"; // يبدأ كسوبر أدمن
+    private static String currentUsername; // الجديد
+    private static int currentUserId;     // الجديد
     private JPanel mainContentPanel;
     private JButton dashboardButton;
     private JButton inventoryButton;
@@ -313,6 +316,32 @@ public class NafzhManager extends JFrame {
         }
     }
 
+    public static String getCurrentRole() {
+    return currentRole;
+    }
+
+    // عدّل هذه الدالة لتقبل اسم المستخدم ومعرفه
+    public static void setCurrentUser(int userId, String username, String role) {
+        NafzhManager.currentUserId = userId;
+        NafzhManager.currentUsername = username;
+        NafzhManager.currentRole = role;
+    }
+
+    // دوال جديدة
+    public static String getCurrentUsername() {
+        return currentUsername;
+    }
+
+    public static int getCurrentUserId() {
+        return currentUserId;
+    }
+
+    
+
+public static void setCurrentRole(String role) {
+    currentRole = role;
+}
+
     private void initializeMenuBar() {
         JMenuBar menuBar = new JMenuBar();
         Font menuFont = getCairoFont(13f);
@@ -349,6 +378,10 @@ public class NafzhManager extends JFrame {
         JMenuItem usersItem = new JMenuItem("إدارة المستخدمين والصلاحيات");
         usersItem.addActionListener(e -> new UserManagementDialog(this, dbManager).setVisible(true));
         
+        JMenuItem switchRoleItem = new JMenuItem("تبديل الدور");
+        switchRoleItem.addActionListener(e -> switchRole());
+        editMenu.add(switchRoleItem);
+
         // زر إعدادات المؤسسة (الاسم والشعار)
         JMenuItem businessInfoItem = new JMenuItem("بيانات المؤسسة (الاسم والشعار)");
         businessInfoItem.addActionListener(e -> {
@@ -631,6 +664,148 @@ public class NafzhManager extends JFrame {
             }
         }
     }
+
+    private void switchRole() {
+    // حالة: Super Admin يريد التبديل إلى دور أقل (أو مستخدم آخر)
+    if (NafzhManager.getCurrentRole().equals("super_admin")) {
+        UserSwitchDialog userSwitchDialog = new UserSwitchDialog(this, dbManager);
+        userSwitchDialog.setVisible(true);
+
+        if (userSwitchDialog.isSwitchConfirmed()) {
+            DatabaseManager.User targetUser = userSwitchDialog.getSelectedUser();
+            // هنا يمكن أن نضيف خطوة طلب كلمة مرور super_admin للتأكيد
+            // أو طلب كلمة مرور targetUser إذا أردنا مصادقة كاملة للتبديل.
+            // للتبسيط، سنفترض أن super_admin يمكنه التبديل مباشرة
+            NafzhManager.setCurrentUser(targetUser.id, targetUser.username, targetUser.role);
+            showToast("تم التبديل إلى: " + targetUser.username + " (" + targetUser.role + ")", false);
+            refreshAllPanels(); // دالة جديدة لتحديث الواجهة
+        }
+    }
+    // حالة: Admin/User يريد التبديل إلى Super Admin
+    else { // الدور الحالي هو "admin" أو "user"
+        LoginDialog login = new LoginDialog(this, dbManager);
+        login.setVisible(true);
+
+        if (login.isAuthenticated() && NafzhManager.getCurrentRole().equals("super_admin")) {
+            // إذا نجح تسجيل الدخول وأصبح الدور super_admin
+            showToast("تم تسجيل الدخول بنجاح كـ " + NafzhManager.getCurrentUsername() + " (super_admin)", false);
+            refreshAllPanels();
+        } else if (login.isAuthenticated()) {
+            // إذا تم تسجيل الدخول ولكن ليس كـ super_admin (ممكن يكون admin عادي)
+            showToast("تم تسجيل الدخول بنجاح كـ " + NafzhManager.getCurrentUsername() + " (" + NafzhManager.getCurrentRole() + ")", false);
+            refreshAllPanels();
+        }
+         else {
+            // إذا تم إلغاء LoginDialog أو فشل
+            showToast("فشل تسجيل الدخول أو تم إلغاؤه.", true);
+        }
+    }
+}
+
+// أضف هذه الدالة لتحديث جميع اللوحات بعد تغيير المستخدم/الدور
+   public void refreshAllPanels() {
+    if (dashboardPanelInstance != null) dashboardPanelInstance.loadDashboardData();
+    if (inventoryPanelInstance != null) inventoryPanelInstance.loadInventoryData();
+    if (transactionsPanelInstance != null) transactionsPanelInstance.loadData();
+    if (posPanelInstance != null) posPanelInstance.clearCart();
+    if (customersPanelInstance != null) customersPanelInstance.loadData();
+    if (installmentsPanelInstance != null) installmentsPanelInstance.refreshData();
+    // قد تحتاج لتحديث قائمة MenuBar لعكس صلاحيات الدور الجديد
+    initializeMenuBar();
+    // تحديث عنوان النافذة الرئيسية أو أي عناصر أخرى تعرض معلومات المستخدم/الدور
+    setTitle("Nafzh Manager | " + NafzhManager.getCurrentUsername() + " (" + NafzhManager.getCurrentRole() + ")");
+    revalidate();
+    repaint();
+}
+
+    // ضع هذا الكلاس داخل NafzhManager.java
+private class UserSwitchDialog extends JDialog {
+    private DatabaseManager.User selectedUser;
+    private boolean switchConfirmed = false;
+    private JComboBox<DatabaseManager.User> userComboBox;
+    private JPasswordField passwordField; // لاستخدامه عند إعادة المصادقة
+
+    public UserSwitchDialog(Frame owner, DatabaseManager dbManager) {
+        super(owner, "التبديل إلى مستخدم آخر", true);
+        setSize(400, 250);
+        setLocationRelativeTo(owner);
+        setLayout(new GridBagLayout());
+        setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        getContentPane().setBackground(Color.WHITE);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        // 1. اختيار المستخدم
+        gbc.gridx = 0; gbc.gridy = 0;
+        add(new JLabel("اختر المستخدم للتبديل إليه:"), gbc);
+
+        gbc.gridx = 1;
+        userComboBox = new JComboBox<>();
+        // جلب جميع المستخدمين باستثناء super_admin الحالي
+        List<DatabaseManager.User> allUsers = dbManager.getAllUsers();
+        for (DatabaseManager.User user : allUsers) {
+            // Super admin يمكنه التبديل إلى أي مستخدم آخر
+            // إذا أردت منع التبديل لنفس المستخدم، أضف شرط:
+            // if (user.id != NafzhManager.getCurrentUserId())
+            userComboBox.addItem(user);
+        }
+        userComboBox.setFont(getCairoFont(14f));
+        userComboBox.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        add(userComboBox, gbc);
+
+        // 2. كلمة المرور (اختياري، يمكنك طلب كلمة مرور super_admin للتأكيد)
+        gbc.gridx = 0; gbc.gridy = 1;
+        add(new JLabel("كلمة مرور Super Admin (للتأكيد):"), gbc);
+
+        gbc.gridx = 1;
+        passwordField = new JPasswordField(15);
+        passwordField.setFont(getCairoFont(14f));
+        add(passwordField, gbc);
+
+        // 3. الأزرار
+        gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 2;
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 0));
+        buttonPanel.setOpaque(false);
+
+        JButton confirmButton = new JButton("تأكيد التبديل");
+        confirmButton.setFont(getCairoFont(14f));
+        confirmButton.setBackground(new Color(46, 204, 113));
+        confirmButton.setForeground(Color.BLACK);
+        confirmButton.addActionListener(e -> {
+            String superAdminPass = new String(passwordField.getPassword());
+            // التحقق من كلمة مرور super_admin الحالي
+            if (dbManager.checkUserCredentials(NafzhManager.getCurrentUsername(), superAdminPass) != null) {
+                selectedUser = (DatabaseManager.User) userComboBox.getSelectedItem();
+                if (selectedUser != null) {
+                    switchConfirmed = true;
+                    dispose();
+                } else {
+                    JOptionPane.showMessageDialog(this, "الرجاء اختيار مستخدم.", "خطأ", JOptionPane.ERROR_MESSAGE);
+                }
+            } else {
+                JOptionPane.showMessageDialog(this, "كلمة مرور Super Admin غير صحيحة.", "خطأ", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        JButton cancelButton = new JButton("إلغاء");
+        cancelButton.setFont(getCairoFont(14f));
+        cancelButton.addActionListener(e -> dispose());
+
+        buttonPanel.add(confirmButton);
+        buttonPanel.add(cancelButton);
+        add(buttonPanel, gbc);
+    }
+
+    public boolean isSwitchConfirmed() {
+        return switchConfirmed;
+    }
+
+    public DatabaseManager.User getSelectedUser() {
+        return selectedUser;
+    }
+}
 
     public void showToast(String message) {
     showToast(message, false);

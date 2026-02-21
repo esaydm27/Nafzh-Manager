@@ -33,7 +33,6 @@ public class InventoryPanel extends JPanel {
             g2.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
             g2.setColor(new Color(80, 80, 80)); 
             
-            // رسم حرف v
             int w = 10;
             int h = 6;
             int xStart = x + (getIconWidth() - w)/2;
@@ -55,7 +54,6 @@ public class InventoryPanel extends JPanel {
             g2.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
             g2.setColor(new Color(80, 80, 80));
             
-            // رسم علامة <
             int w = 6;
             int h = 10;
             int xStart = x + (getIconWidth() - w)/2;
@@ -109,17 +107,14 @@ public class InventoryPanel extends JPanel {
         customizeTable(inventoryTable);
         setupActionColumn();
         
-        // --- تفعيل النقر على السهم/الفئة للطي والتوسيع ---
         inventoryTable.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
                 int row = inventoryTable.rowAtPoint(e.getPoint());
                 int col = inventoryTable.columnAtPoint(e.getPoint());
                 
-                // النقر على عمود الفئة (العمود 0)
                 if (row >= 0 && col == 0) {
                     String category = (String) tableModel.getValueAt(row, 0);
-                    // نتأكد أنه الصف الأول في المجموعة (رأس الفئة)
                     String prevCategory = (row > 0) ? (String) tableModel.getValueAt(row - 1, 0) : "";
                     
                     if (!category.equals(prevCategory)) {
@@ -130,7 +125,6 @@ public class InventoryPanel extends JPanel {
         });
 
         JScrollPane scrollPane = new JScrollPane(inventoryTable);
-        // جعل إطار الجدول بنفس لون الشبكة
         scrollPane.setBorder(BorderFactory.createLineBorder(GRID_COLOR, 1));
         scrollPane.getViewport().setBackground(Color.WHITE);
         add(scrollPane, BorderLayout.CENTER);
@@ -138,12 +132,22 @@ public class InventoryPanel extends JPanel {
 
     public void loadInventoryData() {
         productsData = dbManager.getAllProducts();
+        
         // ترتيب البيانات حسب الفئة
         productsData.sort((p1, p2) -> {
             String c1 = (String) p1.get("category");
             String c2 = (String) p2.get("category");
             return c1.compareTo(c2);
         });
+
+        // --- تحديث: إخفاء سعر الشراء حسب الدور الحالي ---
+        String currentRole = NafzhManager.getCurrentRole();
+        for (Map<String, Object> product : productsData) {
+            // إذا كان المستخدم ليس super_admin، نخفي سعر الشراء
+            if (!"super_admin".equals(currentRole)) {
+                product.put("purchase_price", "******");
+            }
+        }
 
         tableModel = new ExpandableInventoryTableModel(productsData);
         if (inventoryTable != null) {
@@ -154,11 +158,12 @@ public class InventoryPanel extends JPanel {
         parentFrame.updateDashboardData();
     }
 
+
     private void customizeTable(JTable table) {
         table.setRowHeight(45); 
         table.setFont(getCairoFont(12f));
         table.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        table.setShowGrid(false); // سنرسم نحن الحدود يدوياً
+        table.setShowGrid(false); 
         table.setIntercellSpacing(new Dimension(0, 0));
         table.setBackground(Color.WHITE);
 
@@ -175,7 +180,6 @@ public class InventoryPanel extends JPanel {
                 JLabel l = (JLabel) super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
                 l.setBackground(new Color(240, 240, 240));
                 l.setHorizontalAlignment(JLabel.CENTER);
-                // استخدام GRID_COLOR للحدود
                 l.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createMatteBorder(0, 0, 1, 1, GRID_COLOR),
                     BorderFactory.createEmptyBorder(10, 5, 10, 5)
@@ -196,16 +200,12 @@ public class InventoryPanel extends JPanel {
                 
                 boolean isStartOfGroup = !currentCategory.equals(prevCategory);
                 boolean isEndOfGroup = !currentCategory.equals(nextCategory);
-
-                // --- ضبط الحدود: أسفل ويمين دائماً ---
-                // نستخدم GRID_COLOR الزيتوني الواضح
                 
                 if (column == 0) { // عمود الفئة
                     l.setHorizontalAlignment(JLabel.RIGHT); 
                     l.setHorizontalTextPosition(SwingConstants.LEFT);
-                    
                     l.setFont(getCairoFont(13f).deriveFont(Font.BOLD));
-                    l.setForeground(new Color(41, 128, 185)); // لون أزرق للفئة
+                    l.setForeground(new Color(41, 128, 185)); 
                     
                     if (isStartOfGroup) {
                         l.setText(currentCategory);
@@ -216,22 +216,15 @@ public class InventoryPanel extends JPanel {
                         }
                         l.setBackground(new Color(250, 250, 250));
                         l.setOpaque(true);
-                        
-                        // حدود الفئة:
-                        // أعلى: إذا كانت بداية مجموعة، ارسم خط علوي أيضاً لتأكيد الفصل
-                        // أسفل: إذا كانت نهاية مجموعة، ارسم خط سفلي
-                        // يمين: دائماً خط يمين
                         l.setBorder(BorderFactory.createCompoundBorder(
                              BorderFactory.createMatteBorder(1, 0, isEndOfGroup ? 1 : 0, 1, GRID_COLOR),
                              BorderFactory.createEmptyBorder(0, 10, 0, 0)
                         ));
                     } else {
-                        // تفريغ الخلية
                         l.setText("");
                         l.setIcon(null);
                         l.setBackground(Color.WHITE);
                         l.setOpaque(true);
-                        // حدود للخلايا الفارغة: يمين فقط، وأسفل إذا كانت نهاية المجموعة
                         l.setBorder(BorderFactory.createMatteBorder(0, 0, isEndOfGroup ? 1 : 0, 1, GRID_COLOR));
                     }
                 } else { // باقي الأعمدة
@@ -240,7 +233,6 @@ public class InventoryPanel extends JPanel {
                     l.setIcon(null);
                     l.setFont(getCairoFont(12f));
                     l.setBackground(isSelected ? new Color(235, 245, 255) : Color.WHITE);
-                    // رسم حدود واضحة لكل خلية (أسفل ويمين)
                     l.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 1, GRID_COLOR));
                 }
                 return l;
@@ -262,7 +254,6 @@ public class InventoryPanel extends JPanel {
 
     private void setupActionColumn() {
         TableColumn actionColumn = inventoryTable.getColumnModel().getColumn(ACTION_COL_INDEX);
-        // تأكد من استخدام TableActionRendererEditor التي تستخدم GRID_COLOR أيضاً داخلياً
         TableActionRendererEditor actionRendererEditor = new TableActionRendererEditor(
                 inventoryTable,
                 this::handleEditAction,
@@ -292,6 +283,8 @@ public class InventoryPanel extends JPanel {
 
     private void showProductDialog(Map<String, Object> existingData) {
         boolean isEdit = (existingData != null);
+        String currentRole = NafzhManager.getCurrentRole();
+        
         JDialog dialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), isEdit ? "تعديل صنف" : "إضافة صنف جديد", true);
         dialog.setSize(400, 650); 
         dialog.setResizable(false);
@@ -308,7 +301,17 @@ public class InventoryPanel extends JPanel {
         String catVal = isEdit ? (String) existingData.get("category") : "";
         String unitVal = isEdit && existingData.containsKey("unit") ? (String) existingData.get("unit") : "قطعة";
         String qtyVal = isEdit ? String.valueOf(existingData.get("current_quantity")) : "0";
-        String purchVal = isEdit ? String.valueOf(existingData.get("purchase_price")) : "0.0";
+        
+        // منطق إخفاء السعر في مربع الحوار عند التعديل
+        String purchVal = "0.0";
+        if (isEdit) {
+            if (!"super_admin".equals(currentRole)) {
+                purchVal = "******";
+            } else {
+                purchVal = String.valueOf(existingData.get("purchase_price"));
+            }
+        }
+        
         String saleVal = isEdit ? String.valueOf(existingData.get("sale_price")) : "0.0";
 
         MaterialTextField txtName = new MaterialTextField("اسم الصنف", nameVal);
@@ -317,6 +320,11 @@ public class InventoryPanel extends JPanel {
         MaterialTextField txtQty = new MaterialTextField("الكمية الحالية", qtyVal);
         MaterialTextField txtPurch = new MaterialTextField("سعر الشراء", purchVal);
         MaterialTextField txtSale = new MaterialTextField("سعر البيع", saleVal);
+
+        // تعطيل حقل سعر الشراء إذا لم يكن المستخدم super_admin في حالة التعديل
+        if (isEdit && !"super_admin".equals(currentRole)) {
+            txtPurch.getTextField().setEditable(false);
+        }
 
         panel.add(txtName); panel.add(Box.createVerticalStrut(15));
         panel.add(categoryPanel); panel.add(Box.createVerticalStrut(15));
@@ -343,8 +351,16 @@ public class InventoryPanel extends JPanel {
                 JComboBox<String> unitCombo = (JComboBox<String>) ((JPanel) unitPanel.getComponent(1)).getComponent(0);
                 String unit = (String) unitCombo.getSelectedItem();
                 int qty = Integer.parseInt(txtQty.getText().trim());
-                double pPrice = Double.parseDouble(txtPurch.getText().trim());
+                
                 double sPrice = Double.parseDouble(txtSale.getText().trim());
+                double pPrice;
+                
+                // إذا كان السعر مشفراً، نأخذ القيمة القديمة من البيانات الأصلية
+                if (isEdit && txtPurch.getText().equals("******")) {
+                    pPrice = Double.parseDouble(existingData.get("purchase_price").toString());
+                } else {
+                    pPrice = Double.parseDouble(txtPurch.getText().trim());
+                }
 
                 if (isEdit) {
                     dbManager.updateProduct((int) existingData.get("id"), name, cat, unit, qty, pPrice, sPrice);
@@ -448,5 +464,6 @@ public class InventoryPanel extends JPanel {
             add(textField, BorderLayout.CENTER);
         }
         public String getText() { return textField.getText(); }
+        public JTextField getTextField() { return textField; }
     }
 }

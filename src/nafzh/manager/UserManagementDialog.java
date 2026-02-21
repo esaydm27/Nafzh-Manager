@@ -15,6 +15,7 @@ public class UserManagementDialog extends JDialog {
     private final DatabaseManager dbManager;
     private DefaultTableModel tableModel;
     private JTable usersTable;
+    private JComboBox<String> roleCombo; // المكون الجديد لاختيار الدور
 
     // نفس ألوان نافذة الدخول لتوحيد التصميم
     private final Color DARK_BG = new Color(44, 62, 80);
@@ -32,7 +33,7 @@ public class UserManagementDialog extends JDialog {
     }
 
     private void initializeUI() {
-        setSize(600, 500);
+        setSize(600, 550); // تم زيادة الارتفاع قليلاً لاستيعاب الحقل الجديد
         setLocationRelativeTo(getParent());
         setLayout(new BorderLayout());
         setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
@@ -40,8 +41,6 @@ public class UserManagementDialog extends JDialog {
         
         // تعيين خلفية النافذة
         getContentPane().setBackground(DARK_BG);
-        
-
 
         // --- 1. الجدول (في المنتصف) ---
         String[] cols = {"ID", "اسم المستخدم", "الصلاحية"};
@@ -78,21 +77,21 @@ public class UserManagementDialog extends JDialog {
         }
 
         JScrollPane scrollPane = new JScrollPane(usersTable);
-        scrollPane.getViewport().setBackground(Color.WHITE); // خلفية منطقة البيانات بيضاء
-        scrollPane.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10)); // هامش حول الجدول
-        scrollPane.setBackground(DARK_BG); // خلفية الإطار الخارجي داكنة
+        scrollPane.getViewport().setBackground(Color.WHITE); 
+        scrollPane.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10)); 
+        scrollPane.setBackground(DARK_BG); 
         
         add(scrollPane, BorderLayout.CENTER);
 
         // --- 2. قسم الإضافة (في الأسفل) ---
         JPanel bottomPanel = new JPanel(new BorderLayout());
         bottomPanel.setBackground(DARK_BG);
-        bottomPanel.setBorder(new EmptyBorder(10, 20, 20, 20)); // هوامش خارجية
+        bottomPanel.setBorder(new EmptyBorder(10, 20, 20, 20)); 
 
         // عنوان القسم
         JLabel titleLabel = new JLabel("إضافة مستخدم جديد");
         titleLabel.setFont(getCairoFont(14f).deriveFont(Font.BOLD));
-        titleLabel.setForeground(new Color(52, 152, 219)); // أزرق فاتح
+        titleLabel.setForeground(new Color(52, 152, 219)); 
         titleLabel.setHorizontalAlignment(SwingConstants.RIGHT);
         titleLabel.setBorder(new EmptyBorder(0, 0, 10, 0));
         bottomPanel.add(titleLabel, BorderLayout.NORTH);
@@ -126,11 +125,26 @@ public class UserManagementDialog extends JDialog {
 
         gbc.gridx = 1; gbc.weightx = 0.9;
         JPasswordField passField = new JPasswordField();
-        styleTextField(passField); // تطبيق نفس الستايل
+        styleTextField(passField); 
         fieldsPanel.add(passField, gbc);
 
-        // الصف الثالث: الأزرار
-        gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 2; gbc.insets = new Insets(15, 5, 0, 5);
+        // الصف الثالث: الدور (الإضافة الجديدة)
+        gbc.gridx = 0; gbc.gridy = 2; gbc.weightx = 0.1;
+        JLabel roleLabel = new JLabel("الدور:");
+        roleLabel.setFont(getCairoFont(13f));
+        roleLabel.setForeground(TEXT_COLOR);
+        fieldsPanel.add(roleLabel, gbc);
+
+        gbc.gridx = 1; gbc.weightx = 0.9;
+        roleCombo = new JComboBox<>(new String[]{"user", "admin"});
+        roleCombo.setFont(getCairoFont(14f));
+        roleCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        // تحسين مظهر الكومبوبوكس ليتماشى مع التصميم
+        roleCombo.setBackground(INPUT_BG);
+        fieldsPanel.add(roleCombo, gbc);
+
+        // الصف الرابع: الأزرار
+        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2; gbc.insets = new Insets(15, 5, 0, 5);
         
         JPanel btnPanel = new JPanel(new GridLayout(1, 2, 10, 0));
         btnPanel.setOpaque(false);
@@ -141,8 +155,8 @@ public class UserManagementDialog extends JDialog {
         JButton addBtn = new JButton("إضافة");
         styleButton(addBtn, ACCENT_GREEN);
 
-        btnPanel.add(deleteBtn); // يمين (بسبب RTL)
-        btnPanel.add(addBtn);    // يسار
+        btnPanel.add(deleteBtn); 
+        btnPanel.add(addBtn);    
 
         fieldsPanel.add(btnPanel, gbc);
 
@@ -153,12 +167,14 @@ public class UserManagementDialog extends JDialog {
         addBtn.addActionListener(e -> {
             String u = userField.getText();
             String p = new String(passField.getPassword());
+            String role = (String) roleCombo.getSelectedItem(); // الحصول على الدور المحدد
+            
             if(!u.isEmpty() && !p.isEmpty()) {
                 if (p.length() < 6) {
                     JOptionPane.showMessageDialog(this, "كلمة المرور ضعيفة (أقل من 6 أحرف)", "تنبيه", JOptionPane.WARNING_MESSAGE);
                     return;
                 }
-                if(dbManager.addUser(u, p, "user")) {
+                if(dbManager.addUser(u, p, role)) { // تمرير الدور المحدد
                     loadUsers();
                     userField.setText("");
                     passField.setText("");
@@ -177,8 +193,8 @@ public class UserManagementDialog extends JDialog {
                 int id = Integer.parseInt(tableModel.getValueAt(row, 0).toString());
                 String role = tableModel.getValueAt(row, 2).toString();
                 
-                if ("admin".equals(role)) {
-                    JOptionPane.showMessageDialog(this, "لا يمكن حذف حساب المدير الرئيسي!", "خطأ", JOptionPane.ERROR_MESSAGE);
+                if ("admin".equals(role) || "super_admin".equals(role)) {
+                    JOptionPane.showMessageDialog(this, "لا يمكن حذف حسابات المسؤولين من هنا!", "خطأ", JOptionPane.ERROR_MESSAGE);
                     return;
                 }
 
@@ -191,8 +207,6 @@ public class UserManagementDialog extends JDialog {
         });
     }
 
-    // --- دوال مساعدة للتصميم ---
-    
     private JTextField createStyledTextField() {
         JTextField field = new JTextField();
         styleTextField(field);
@@ -204,7 +218,6 @@ public class UserManagementDialog extends JDialog {
         field.setPreferredSize(new Dimension(0, 35));
         field.setBorder(BorderFactory.createEmptyBorder(0, 5, 0, 5));
         field.setBackground(INPUT_BG);
-        // لغة الكتابة يسار لليمين (انجليزي/أرقام)
         field.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
     }
 
@@ -225,7 +238,10 @@ public class UserManagementDialog extends JDialog {
 
     private void loadUsers() {
         tableModel.setRowCount(0);
-        List<String[]> users = dbManager.getAllUsers();
-        for(String[] u : users) tableModel.addRow(u);
+        // تم التحديث ليتوافق مع استرجاع قائمة من كائنات User
+        List<DatabaseManager.User> users = dbManager.getAllUsers();
+        for(DatabaseManager.User u : users) {
+            tableModel.addRow(new Object[]{u.id, u.username, u.role});
+        }
     }
 }
