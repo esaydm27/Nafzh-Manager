@@ -597,12 +597,12 @@ public class NafzhManager extends JFrame {
             JOptionPane.showMessageDialog(this, "لا يوجد تحديثات متوفرة حالياً. أنت تستخدم أحدث إصدار.", "لا يوجد تحديث", JOptionPane.INFORMATION_MESSAGE);
         }
     }
-
+    
     /**
  * دالة محدثة لتطبيق الخط والاتجاه RTL بشكل تكراري (Recursive)
  * لضمان وصول التنسيق لجميع العناصر بما فيها القوائم الفرعية العميقة.
  */
-private void applyRTLLayout(JMenuBar menuBar, Font font) {
+    private void applyRTLLayout(JMenuBar menuBar, Font font) {
     // 1. المرور على القوائم الرئيسية (ملف، تحرير، عرض...)
     for (int i = 0; i < menuBar.getMenuCount(); i++) {
         JMenu menu = menuBar.getMenu(i);
@@ -632,6 +632,32 @@ private void applyRTLLayout(JMenuBar menuBar, Font font) {
         }
     }
 
+    public void showToast(String message) {
+    showToast(message, false);
+}
+
+    public void showToast(String message, boolean isError) {
+    JDialog toast = new JDialog(this);
+    toast.setUndecorated(true);
+    toast.setLayout(new BorderLayout());
+    Color bgColor = isError ? new Color(180, 40, 40, 220) : new Color(40, 110, 40, 220);
+    JPanel panel = new JPanel();
+    panel.setBackground(bgColor);
+    panel.setBorder(BorderFactory.createLineBorder(Color.WHITE, 1));
+    JLabel label = new JLabel(message, SwingConstants.CENTER);
+    label.setForeground(Color.WHITE);
+    label.setFont(getCairoFont(14f));
+    label.setBorder(BorderFactory.createEmptyBorder(10, 25, 10, 25));
+    panel.add(label);
+    toast.add(panel);
+    toast.pack();
+    int x = this.getX() + (this.getWidth() - toast.getWidth()) / 2;
+    int y = this.getY() + this.getHeight() - 150;
+    toast.setLocation(x, y);
+    toast.setVisible(true);
+    new Timer(800, e -> toast.dispose()).start();
+}    
+    
 
     public void showPanel(String panelName) {
         this.currentPanelName = panelName;
@@ -944,69 +970,7 @@ private void applyRTLLayout(JMenuBar menuBar, Font font) {
         detailsDialog.setVisible(true);
     }
 
-    /*
-    public static void main(String[] args) {
-        try {
-            UIManager.setLookAndFeel("javax.swing.plaf.nimbus.NimbusLookAndFeel");
-        } catch (Exception e) {}
 
-        SwingUtilities.invokeLater(() -> {
-            // 1. نظام الترخيص (License)
-            LicenseManager licenseManager = new LicenseManager();
-            LicenseManager.LicenseStatus status = licenseManager.checkLicense();
-
-            if (status != LicenseManager.LicenseStatus.ACTIVATED) {
-                LicenseDialog licenseDialog = new LicenseDialog(null, licenseManager, status);
-                licenseDialog.setVisible(true);
-
-                if (!licenseDialog.isActivatedOrTrial()) {
-                    System.exit(0);
-                }
-            }
-
-            // 2. الاتصال بقاعدة البيانات وإنشاء الجداول
-            DatabaseManager db = new DatabaseManager();
-            db.createNewTables();
-
-            // 3. شاشة تسجيل الدخول (Login)
-            LoginDialog loginDialog = new LoginDialog(null, db);
-            loginDialog.setVisible(true);
-
-            // 4. إذا نجح الدخول، نبدأ التطبيق
-            if (loginDialog.isAuthenticated()) {
-                
-                // --- الإضافة الجديدة: التحقق من بيانات المؤسسة ---
-                DatabaseManager.BusinessInfo info = db.getBusinessInfo();
-                
-                // إذا لم تكن البيانات موجودة (أول مرة)، نفتح نافذة الإعدادات
-                if (info == null) {
-                    // نفتح نافذة مخفية مؤقتاً لتكون أباً للـ Dialog
-                    JFrame dummyFrame = new JFrame();
-                    BusinessSettingsDialog settingsDialog = new BusinessSettingsDialog(dummyFrame, db);
-                    settingsDialog.setVisible(true);
-                    dummyFrame.dispose();
-                    
-                    // إذا أغلق المستخدم النافذة دون حفظ، نغلق البرنامج (لإجباره على الإدخال)
-                    if (!settingsDialog.isDataSaved()) {
-                        System.exit(0);
-                    }
-                }
-                // ------------------------------------------------
-
-                NafzhManager app = new NafzhManager();
-                
-                // ثانياً: نستدعي دالة فحص التحديثات
-                app.updater.showUpdateCheckDialog();
-                
-            } else {
-                System.exit(0);
-            }
-        });
-    }
-  
-        // ... (باقي الكلاس) ...
-
-   */
     public static void main(String[] args) {
         try {
             UIManager.setLookAndFeel("javax.swing.plaf.nimbus.NimbusLookAndFeel");

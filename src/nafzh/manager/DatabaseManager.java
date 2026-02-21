@@ -24,6 +24,10 @@ public class DatabaseManager {
     private static final String URL = "jdbc:sqlite:inventory.db";
     private Connection conn = null;
 
+    boolean checkLogin(String user, String pass) {
+        throw new UnsupportedOperationException("Not supported yet."); // Generated from nbfs://nbhost/SystemFileSystem/Templates/Classes/Code/GeneratedMethodBody
+    }
+
     public static class Customer {
         public final int id;
         public final String name;

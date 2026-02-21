@@ -7,25 +7,14 @@ import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.util.Properties;
-
 
 public class Updater {
 
-    // ⚠️ مهم: إصدار التطبيق الحالي
-    private static final String CURRENT_APP_VERSION = "1.0.1"; // <--- يجب أن يكون هذا رقم إصدار نسختك الحالية
-
-    // ⚠️ مهم: اسم حسابك على GitHub
+    private static final String CURRENT_APP_VERSION = "1.0.0"; 
     private static final String GITHUB_REPO_OWNER = "esaydm27"; 
-    
-    // ⚠️ مهم: اسم المستودع الجديد (مطابق للرابط الذي أرسلته)
-    private static final String GITHUB_REPO_NAME = "Nafzh-Manager"; // <--- تم التعديل هنا
+    private static final String GITHUB_REPO_NAME = "Nafzh-Manager"; 
+    private static final String APP_JAR_NAME = "Nafzh_Manager.jar"; 
 
-    // ⚠️ مهم: اسم ملف JAR الخاص بتطبيقك (تأكد من مطابقته تماماً)
-    private static final String APP_JAR_NAME = "NafzhManager.jar"; // <--- تأكد أن هذا هو اسم ملف JAR الذي يتم بناؤه
-
-    // روابط ملفات التحديث (يتم توليدها)
     private static final String GITHUB_RAW_VERSION_URL = "https://raw.githubusercontent.com/" + GITHUB_REPO_OWNER + "/" + GITHUB_REPO_NAME + "/main/version.txt";
     private static final String GITHUB_DOWNLOAD_URL = "https://github.com/" + GITHUB_REPO_OWNER + "/" + GITHUB_REPO_NAME + "/releases/download/v" + "%s" + "/" + APP_JAR_NAME;
 
@@ -35,35 +24,27 @@ public class Updater {
         this.parentFrame = parent;
     }
 
-    // =========================================================================================
-    // === 1. فحص التحديثات (اللوجيك الأساسي) ===
-    // =========================================================================================
-
-    // فحص إذا كان هناك تحديث متوفر
     public String checkForUpdate(boolean checkRemote) {
+        System.out.println("[Updater] بدء فحص التحديثات...");
         String latestVersion = null;
         try {
             if (checkRemote) {
-                // قراءة من GitHub
                 latestVersion = readVersionFromUrl(GITHUB_RAW_VERSION_URL);
             } else {
-                // قراءة من ملف محلي (يفترض أن يكون بجوار JAR)
                 latestVersion = readVersionFromFile("version.txt");
             }
 
             if (latestVersion != null && !latestVersion.isEmpty()) {
-                // مقارنة الإصدارات (افترض أن الإصدارات كلها x.y.z)
                 if (compareVersions(latestVersion, CURRENT_APP_VERSION) > 0) {
-                    return latestVersion; // يوجد إصدار أحدث
+                    return latestVersion;
                 }
             }
         } catch (IOException e) {
-            JOptionPane.showMessageDialog(parentFrame, "خطأ في فحص التحديثات: " + e.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
+            System.err.println("[Updater] خطأ أثناء الفحص: " + e.getMessage());
         }
-        return null; // لا يوجد تحديث أو حدث خطأ
+        return null;
     }
 
-    // جلب رقم الإصدار من ملف على الإنترنت
     private String readVersionFromUrl(String urlString) throws IOException {
         URL url = new URL(urlString);
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
@@ -75,9 +56,7 @@ public class Updater {
         }
     }
 
-    // جلب رقم الإصدار من ملف محلي
     private String readVersionFromFile(String fileName) throws IOException {
-        // يفضل أن يكون الملف بجوار JAR
         Path path = Paths.get(System.getProperty("user.dir"), fileName);
         if (Files.exists(path)) {
             return Files.readAllLines(path).get(0);
@@ -85,7 +64,6 @@ public class Updater {
         return null;
     }
 
-    // مقارنة أرقام الإصدارات (V1 > V2 -> موجب، V1 < V2 -> سالب، V1 = V2 -> صفر)
     private int compareVersions(String v1, String v2) {
         String[] parts1 = v1.split("\\.");
         String[] parts2 = v2.split("\\.");
@@ -100,9 +78,6 @@ public class Updater {
         return 0;
     }
 
-    // =========================================================================================
-    // === 2. تحميل الملف الجديد ===
-    // =========================================================================================
     public boolean downloadUpdate(String latestVersion) {
         String downloadUrl = String.format(GITHUB_DOWNLOAD_URL, latestVersion);
         try {
@@ -110,8 +85,7 @@ public class Updater {
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("GET");
 
-            int responseCode = connection.getResponseCode();
-            if (responseCode == HttpURLConnection.HTTP_OK) {
+            if (connection.getResponseCode() == HttpURLConnection.HTTP_OK) {
                 Path tempDir = Files.createTempDirectory("NafzhUpdater");
                 Path newJarPath = Paths.get(tempDir.toString(), APP_JAR_NAME);
 
@@ -123,73 +97,90 @@ public class Updater {
                         out.write(buffer, 0, bytesRead);
                     }
                 }
-                // تنفيذ سكريبت التحديث
                 executeUpdaterScript(tempDir.toString(), newJarPath.toString());
                 return true;
-            } else {
-                JOptionPane.showMessageDialog(parentFrame, "فشل تحميل التحديث. كود الاستجابة: " + responseCode, "خطأ", JOptionPane.ERROR_MESSAGE);
             }
         } catch (IOException e) {
-            JOptionPane.showMessageDialog(parentFrame, "خطأ في تحميل التحديث: " + e.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(parentFrame, "خطأ في تحميل التحديث: " + e.getMessage());
         }
         return false;
     }
 
-    // =========================================================================================
-    // === 3. تنفيذ سكريبت التحديث ===
-    // =========================================================================================
     private void executeUpdaterScript(String tempDirPath, String newJarPath) throws IOException {
         String currentJarPath = getRunningJarPath();
+
         if (currentJarPath == null) {
             JOptionPane.showMessageDialog(parentFrame, "لا يمكن تحديد مسار ملف JAR الحالي.", "خطأ", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
-        String scriptContent = generateUpdateScript(currentJarPath, newJarPath);
-        Path scriptPath = Paths.get(tempDirPath, "updater.bat"); // اسم السكريبت
+        String scriptContent = generateUpdateScript();
+        Path scriptPath = Paths.get(tempDirPath, "updater.bat");
+        Files.write(scriptPath, scriptContent.getBytes("UTF-8"));
 
-        Files.write(scriptPath, scriptContent.getBytes()); // كتابة السكريبت
+        // تشغيل السكريبت في نافذة جديدة مع إبقاء المسارات داخل علامات تنصيص
+        ProcessBuilder pb = new ProcessBuilder("cmd", "/c", "start", "updater.bat", currentJarPath, newJarPath);
+        pb.directory(new File(tempDirPath));
+        pb.start();
 
-        // تشغيل السكريبت وإنهاء التطبيق الحالي
-        Runtime.getRuntime().exec("cmd /c start \"" + scriptPath.toString() + "\" \"" + scriptPath.toString() + "\"");
-        System.exit(0); // إنهاء التطبيق الحالي
+        System.out.println("[Updater] تم تشغيل سكريبت التحديث بنجاح. سيتم إغلاق البرنامج الآن.");
+        System.exit(0);
     }
 
-    // جلب المسار الحالي لملف JAR
     private String getRunningJarPath() {
         try {
-            // هذا يعطي مسار JAR الحالي
             String path = Updater.class.getProtectionDomain().getCodeSource().getLocation().toURI().getPath();
-            // أحياناً يكون Path مشفراً (مثلاً بمسافات %20)، يجب فك التشفير
             path = java.net.URLDecoder.decode(path, "UTF-8");
-            // حذف "file:/" أو "file:/C:" إذا كانت موجودة
-            if (path.startsWith("/")) path = path.substring(1); // For Windows, remove leading /
-            return path;
+            
+            // تصحيح مسار ويندوز إذا بدأ بـ /C:/
+            if (path.startsWith("/") && path.contains(":")) {
+                path = path.substring(1);
+            }
+            // توحيد الفواصل لتكون Backslashes
+            return new File(path).getAbsolutePath();
         } catch (Exception e) {
             e.printStackTrace();
             return null;
         }
     }
 
-    // =========================================================================================
-    // === 4. محتوى سكريبت التحديث (updater.bat) ===
-    // =========================================================================================
-    private String generateUpdateScript(String currentJarPath, String newJarPath) {
-        Path currentDir = Paths.get(currentJarPath).getParent(); // مجلد التطبيق الحالي
-        String currentAppName = Paths.get(currentJarPath).getFileName().toString(); // اسم JAR الحالي (NafzhManager.jar)
-
+    private String generateUpdateScript() {
+        // تم استبدال النصوص العربية بكلمات إنجليزية ورموز لتجنب مشاكل الترميز (Encoding) في ويندوز
         return "@echo off\n" +
-               "CHCP 65001\n" + // لدعم اللغة العربية في CMD
-               "echo. Nafzh Manager Updater - جاري تحديث التطبيق...\n" +
-               "echo. الرجاء عدم إغلاق هذه النافذة.\n" +
-               "timeout /t 5 >nul\n" + // انتظار 5 ثواني لضمان إغلاق التطبيق الحالي
-               "echo. جارٍ استبدال الملف القديم...\n" +
-               "del \"" + currentJarPath + "\"\n" + // حذف JAR القديم
-               "move \"" + newJarPath + "\" \"" + currentJarPath + "\"\n" + // نقل JAR الجديد
-               "echo. تم التحديث بنجاح! جاري إعادة تشغيل التطبيق...\n" +
-               "start \"Nafzh Manager\" javaw -jar \"" + currentJarPath + "\"\n" + // إعادة تشغيل التطبيق
-               "del \"%~f0\"\n" + // حذف سكريبت التحديث نفسه
-               "rmdir /s /q \"" + Paths.get(newJarPath).getParent().toString() + "\"\n" + // حذف المجلد المؤقت
-               "exit";
+               "title Nafzh Manager - Update Console\n" +
+               "SET \"OLD_JAR=%~1\"\n" +
+               "SET \"NEW_JAR=%~2\"\n\n" +
+
+               "echo. ===============================================\n" +
+               "echo.            NAFZH MANAGER UPDATER\n" +
+               "echo. ===============================================\n\n" +
+               
+               "echo. [1] Waiting for application to close...\n" +
+               "timeout /t 5 /nobreak\n\n" +
+
+               "echo. [2] Killing remaining Java processes...\n" +
+               "taskkill /F /IM javaw.exe /T >nul 2>&1\n\n" +
+
+               "echo. [3] Replacing old file with new one...\n" +
+               "echo. FROM: %NEW_JAR%\n" +
+               "echo. TO:   %OLD_JAR%\n" +
+               "copy /Y \"%NEW_JAR%\" \"%OLD_JAR%\"\n" +
+               "if errorlevel 1 (\n" +
+               "    echo. -----------------------------------------------\n" +
+               "    echo. [ERROR] Failed to replace the file! \n" +
+               "    echo. Please check permissions or if the file is locked.\n" +
+               "    echo. -----------------------------------------------\n" +
+               "    pause\n" +
+               "    exit\n" +
+               ")\n\n" +
+
+               "echo. [4] Update Successful!\n" +
+               "echo. Restarting the application...\n" +
+               "start \"\" javaw -jar \"%OLD_JAR%\"\n\n" +
+
+               "echo. ===============================================\n" +
+               "echo. DONE. Press any key to close this window.\n" +
+               "echo. ===============================================\n" +
+               "pause\n";
     }
 }

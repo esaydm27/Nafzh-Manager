@@ -101,27 +101,52 @@ public class BusinessSettingsDialog extends JDialog {
         add(btnPanel, BorderLayout.SOUTH);
     }
 
-    private void saveData() {
+  private void saveData() {
+        // 1. الحصول على المرجع بشكل صحيح
+        NafzhManager parent = null;
+        if (getParent() instanceof NafzhManager) {
+            parent = (NafzhManager) getParent();
+        }
+
+        // 2. التحقق من الحقول (استخدام Toast بدلاً من JOptionPane)
         if (nameField.getText().trim().isEmpty()) {
-            JOptionPane.showMessageDialog(this, "يجب كتابة اسم المؤسسة");
+            if (parent != null) {
+                parent.showToast("يجب كتابة اسم المؤسسة", true); 
+            } else {
+                // حالة احتياطية فقط إذا لم يجد الأب
+                JOptionPane.showMessageDialog(this, "يجب كتابة اسم المؤسسة");
+            }
             return;
         }
         
+        // 3. محاولة الحفظ
         boolean success = dbManager.saveBusinessInfo(
             nameField.getText(),
             sloganField.getText(),
             phone1Field.getText(),
             phone2Field.getText(),
-            salesmanField.getText(), // لن يعطي خطأ الآن
+            salesmanField.getText(),
             currentLogoBytes
         );
 
+        // 4. معالجة النتيجة (الاعتماد الكلي على Toast)
         if (success) {
-            JOptionPane.showMessageDialog(this, "تم الحفظ بنجاح! سيتم إعادة تشغيل التطبيق.");
             dataSaved = true;
-            dispose();
+            if (parent != null) {
+                // تظهر الرسالة وتختفي تلقائياً بناءً على كود دالة showToast
+                parent.showToast("تم الحفظ بنجاح! سيتم إغلاق النافذة", false);
+                
+                // نغلق الدايلوج بعد ثانية واحدة ليعطي فرصة للـ Toast ليظهر
+                Timer timer = new Timer(1000, e -> dispose());
+                timer.setRepeats(false);
+                timer.start();
+            } else {
+                dispose();
+            }
         } else {
-            JOptionPane.showMessageDialog(this, "فشل الحفظ");
+            if (parent != null) {
+                parent.showToast("فشل الحفظ.. حاول مرة أخرى", true);
+            }
         }
     }
 

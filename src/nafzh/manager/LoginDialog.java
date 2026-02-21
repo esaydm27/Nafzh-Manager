@@ -14,6 +14,8 @@ public class LoginDialog extends JDialog {
     private JTextField userField;
     private JPasswordField passField;
     private boolean isAuthenticated = false;
+    private NafzhManager parentManager; // إضافة مرجع للمدير الرئيسي
+
     
     // الألوان المستخدمة في التصميم الداكن
     private final Color DARK_BG = new Color(44, 62, 80);       // خلفية داكنة
@@ -25,6 +27,10 @@ public class LoginDialog extends JDialog {
     public LoginDialog(Frame parent, DatabaseManager dbManager) {
         super(parent, "تسجيل الدخول - Nafzh Manager", true);
         this.dbManager = dbManager;
+        // نتحقق إذا كان الـ parent هو فعلاً NafzhManager لنتمكن من استدعاء الـ Toast 
+        if (parent instanceof NafzhManager) { 
+            this.parentManager = (NafzhManager) parent; }
+
         initializeUI();
     }
 
@@ -104,35 +110,64 @@ public class LoginDialog extends JDialog {
         add(mainPanel, BorderLayout.CENTER);
 
         // --- منطق زر الدخول/الإنشاء ---
-        actionBtn.addActionListener(e -> {
+     actionBtn.addActionListener(e -> {
             String user = userField.getText().trim();
             String pass = new String(passField.getPassword()).trim();
 
+            // الحصول على مرجع للمدير الرئيسي لاستدعاء الـ Toast
+            NafzhManager parent = null;
+            if (getParent() instanceof NafzhManager) {
+                parent = (NafzhManager) getParent();
+            }
+
+            // 1. التحقق من الحقول الفارغة
             if (user.isEmpty() || pass.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "يرجى ملء جميع الحقول", "تنبيه", JOptionPane.WARNING_MESSAGE);
-                return;
-            }
-
-            // التحقق من قوة كلمة السر عند الإنشاء فقط
-            if (isFirstRun && pass.length() < 6) {
-                JOptionPane.showMessageDialog(this, "كلمة المرور ضعيفة! يجب أن تكون 6 أحرف على الأقل.", "تنبيه أمني", JOptionPane.WARNING_MESSAGE);
-                return;
-            }
-
-            if (isFirstRun) {
-                if (dbManager.addUser(user, pass, "admin")) {
-                    JOptionPane.showMessageDialog(this, "تم إنشاء حساب المدير بنجاح!");
-                    isAuthenticated = true;
-                    dispose();
+                if (parent != null) {
+                    parent.showToast("يرجى ملء جميع الحقول", true);
                 } else {
-                    JOptionPane.showMessageDialog(this, "حدث خطأ أثناء الإنشاء");
+                    JOptionPane.showMessageDialog(this, "يرجى ملء جميع الحقول", "تنبيه", JOptionPane.WARNING_MESSAGE);
                 }
-            } else {
-                if (dbManager.checkUserCredentials(user, pass)) {
+                return;
+            }
+
+            // 2. منطق التشغيل الأول (إنشاء حساب)
+            if (isFirstRun) {
+                if (pass.length() < 6) {
+                    if (parent != null) {
+                        parent.showToast("كلمة المرور ضعيفة! (6 أحرف على الأقل)", true);
+                    } else {
+                        JOptionPane.showMessageDialog(this, "كلمة المرور ضعيفة!", "تنبيه أمني", JOptionPane.WARNING_MESSAGE);
+                    }
+                    return;
+                }
+
+                if (dbManager.addUser(user, pass, "admin")) {
+                    if (parent != null) {
+                        parent.showToast("تم إنشاء حساب المدير بنجاح!");
+                    }
                     isAuthenticated = true;
                     dispose();
                 } else {
-                    JOptionPane.showMessageDialog(this, "اسم المستخدم أو كلمة المرور غير صحيحة", "خطأ في الدخول", JOptionPane.ERROR_MESSAGE);
+                    if (parent != null) {
+                        parent.showToast("حدث خطأ أثناء إنشاء الحساب", true);
+                    } else {
+                        JOptionPane.showMessageDialog(this, "حدث خطأ أثناء الإنشاء");
+                    }
+                }
+            } 
+            // 3. منطق تسجيل الدخول العادي
+            else {
+                // ملاحظة: تأكد أن الدالة في DatabaseManager اسمها authenticateUser أو validateLogin
+                // إذا كان اسمها مختلفاً، قم بتغيير checkLogin للاسم الصحيح لديك
+                if (dbManager.checkLogin(user, pass)) { 
+                    isAuthenticated = true;
+                    dispose();
+                } else {
+                    if (parent != null) {
+                        parent.showToast("بيانات الدخول غير صحيحة", true);
+                    } else {
+                        JOptionPane.showMessageDialog(this, "خطأ في تسجيل الدخول");
+                    }
                 }
             }
         });
