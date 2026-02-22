@@ -25,16 +25,16 @@ public class Updater {
     }
 
     private String getCurrentVersion() {
-    try {
+        try {
         Path path = Paths.get(System.getProperty("user.dir"), "version.txt");
-        if (Files.exists(path)) {
+            if (Files.exists(path)) {
             return Files.readAllLines(path).get(0).trim();
-        }
+            }
     } catch (IOException e) {
         e.printStackTrace();
-    }
+        }
     return null; // إذا لم يوجد الملف أو حدث خطأ، ترجع null
-}
+        }
 
 public String checkForUpdate(boolean checkRemote) {
     System.out.println("[Updater] بدء فحص التحديثات...");

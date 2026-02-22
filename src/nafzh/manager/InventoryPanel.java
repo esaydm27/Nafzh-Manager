@@ -246,8 +246,9 @@ public class InventoryPanel extends JPanel {
             }
         }
         
-        table.getColumnModel().getColumn(0).setPreferredWidth(180);
-        table.getColumnModel().getColumn(1).setPreferredWidth(50);
+        table.getColumnModel().getColumn(0).setPreferredWidth(100);
+        table.getColumnModel().getColumn(1).setPreferredWidth(30);
+        table.getColumnModel().getColumn(2).setPreferredWidth(260);
         table.getColumnModel().getColumn(ACTION_COL_INDEX).setPreferredWidth(140);
         table.getColumnModel().getColumn(ACTION_COL_INDEX).setMinWidth(140);
     }

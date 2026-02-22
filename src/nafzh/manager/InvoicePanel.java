@@ -149,7 +149,7 @@ public class InvoicePanel extends JPanel {
         // يمين: العميل
         infoGrid.add(createSingleLabelRow("المطلوب من السيد:", invoiceData.customerName));
         // يسار: رقم الفاتورة
-        infoGrid.add(createSingleLabelRow("رقم الفاتورة:", "#" + invoiceData.saleId));
+        infoGrid.add(createSingleLabelRow("رقم الفاتورة:", "" + invoiceData.saleId));
 
         // الصف الثاني
         // يمين: المندوب
