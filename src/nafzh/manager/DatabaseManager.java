@@ -1,5 +1,9 @@
 package nafzh.manager;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -13,25 +17,22 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
 import java.util.Vector;
+
+
+
 import java.text.NumberFormat; // <-- إضافة مهمة
 import java.text.ParseException; // <-- إضافة مهمة
 import java.util.Locale; 
 
-
 public class DatabaseManager {
 
-    private static final String URL = "jdbc:sqlite:inventory.db";
-    
-    private Connection connection;
-
-
-    /**
-     * الدالة المعدلة للتحقق من تسجيل الدخول
-     * تم استبدال سطر Exception بالاستدعاء الصحيح للدالة التي تفحص قاعدة البيانات
-     */
-    
-
+    //private static final String URL = "jdbc:sqlite:inventory.db";
+    private static String URL; // تم تحويلها لمتغير نهائي غير ساكن ليتم ضبطه برمجياً
+    private static Connection connection;
+    private static boolean isInitialized = false; // متغير الحالة لمنع التكرار
+   
     public static class Customer {
         public final int id;
         public final String name;
@@ -54,13 +55,8 @@ public class DatabaseManager {
             return this.name;
         }
     }
-     
-    /**
-     * الدالة المضافة للتحقق من بيانات المستخدم في قاعدة البيانات
-     * تقوم بالبحث عن تطابق اسم المستخدم وكلمة المرور في جدول users
-     */
-    // غيّر نوع الإرجاع من boolean إلى User
-public User checkUserCredentials(String username, String password) {
+
+   public User checkUserCredentials(String username, String password) {
     String sql = "SELECT id, username, role FROM users WHERE username = ? AND password = ?";
     try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
         pstmt.setString(1, username);
@@ -77,11 +73,10 @@ public User checkUserCredentials(String username, String password) {
     return null; // إذا فشل التحقق، أرجع null
 }
 
-// عدّل دالة checkLogin لتستخدم الدالة الجديدة
-boolean checkLogin(String user, String pass) {
+   boolean checkLogin(String user, String pass) {
     return checkUserCredentials(user, pass) != null;
 }
-    
+   
     public static class Installment {
         public final int id;
         public final int saleId;
@@ -101,7 +96,8 @@ boolean checkLogin(String user, String pass) {
             this.isPaid = isPaid;
         }
     }
-       
+   
+    
     public static class ProductForPOS {
         public final int id;
         public final String name;
@@ -119,39 +115,90 @@ boolean checkLogin(String user, String pass) {
     }
 
     public DatabaseManager() {
+        // نضمن أن المسار يتم تعريفه مرة واحدة فقط عند تشغيل التطبيق لأول مرة
+        if (URL == null) {
+            initializeDatabasePath();
+        }
+        
+        // فتح الاتصال
         connect();
-        createNewTables();
-        addStatusColumnIfMissing();
-    }
-    
-    public void connect() {
-    try {
-        // تحميل درايفر SQLite
-        Class.forName("org.sqlite.JDBC");
-        // ربط الاتصال بملف قاعدة البيانات
-        connection = DriverManager.getConnection("jdbc:sqlite:inventory.db");
-        System.out.println("تم الاتصال بقاعدة البيانات بنجاح!");
-    } catch (Exception e) {
-        e.printStackTrace();
-        System.err.println("فشل الاتصال بقاعدة البيانات: " + e.getMessage());
-    }
-}
-
-/*
-    public void connect() {
-        try {
-            Class.forName("org.sqlite.JDBC");
-            conn = DriverManager.getConnection(URL);
-        } catch (SQLException | ClassNotFoundException e) {
-            System.err.println("Database Connection Error: " + e.getMessage());
+        
+        // إنشاء الجداول والبيانات الأساسية مرة واحدة فقط لمنع ثقل التشغيل
+        if (!isInitialized) {
+            createNewTables();
+            isInitialized = true; 
+            System.out.println("Maintenance: Database Initialized Successfully.");
         }
     }
-*/
-    public static Connection getConnection() throws SQLException {
-        return DriverManager.getConnection(URL);
+
+    public static Connection getConnection() {
+        try {
+            if (connection == null || connection.isClosed()) {
+                if (URL != null) {
+                    connection = DriverManager.getConnection(URL);
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Critical Error: Connection lost. " + e.getMessage());
+        }
+        return connection;
+    }
+    
+    private static String getDatabasePath() {
+    String dbName = "inventory.db";
+    String workingDirectory;
+    String OS = System.getProperty("os.name").toUpperCase();
+
+    if (OS.contains("WIN")) {
+        // في ويندوز نستخدم AppData/Local/NafzhManager
+        workingDirectory = System.getenv("AppData") + File.separator + "NafzhManager";
+    } else {
+        // في لينكس أو ماك نستخدم مجلد المستخدم الرئيسي
+        workingDirectory = System.getProperty("user.home") + File.separator + ".nafzh_manager";
     }
 
-   public void createNewTables() {
+    // إنشاء المجلد إذا لم يكن موجوداً
+    File folder = new File(workingDirectory);
+    if (!folder.exists()) {
+        folder.mkdirs();
+    }
+
+    return "jdbc:sqlite:" + workingDirectory + File.separator + dbName;
+}
+   
+    private void initializeDatabasePath() {
+        String dbName = "inventory.db";
+        String oldPath = System.getProperty("user.dir") + File.separator + dbName;
+        String newFolderPath;
+        String OS = System.getProperty("os.name").toUpperCase();
+
+        if (OS.contains("WIN")) {
+            newFolderPath = System.getenv("AppData") + File.separator + "Nafzh";
+        } else {
+            newFolderPath = System.getProperty("user.home") + File.separator + ".nafzh";
+        }
+
+        File folder = new File(newFolderPath);
+        if (!folder.exists()) folder.mkdirs();
+
+        String targetPath = newFolderPath + File.separator + dbName;
+        File oldDbFile = new File(oldPath);
+        File targetDbFile = new File(targetPath);
+
+        // هجرة البيانات (Migration)
+        if (oldDbFile.exists() && !targetDbFile.exists()) {
+            try {
+                Files.move(oldDbFile.toPath(), targetDbFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                System.out.println("Maintenance: Database moved to AppData.");
+            } catch (IOException e) {
+                URL = "jdbc:sqlite:" + oldPath;
+                return;
+            }
+        }
+        URL = "jdbc:sqlite:" + targetPath;
+    }
+   /* 
+    public void createNewTables() {
     String[] sqlCommands = {
         // جدول الفئات
         "CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, category_name TEXT NOT NULL UNIQUE);",
@@ -203,7 +250,76 @@ boolean checkLogin(String user, String pass) {
         System.err.println("Error creating tables: " + e.getMessage()); 
     }
 }
+*/
+    public void createNewTables() {
+        // الكود لا يتغير هنا، فقط نستخدمه داخل شرط المرة الواحدة في الـ Constructor
+        String[] tables = {
+            "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, role TEXT)",
+            "CREATE TABLE IF NOT EXISTS units (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)",
+            "CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, category TEXT, barcode TEXT UNIQUE, unit_id INTEGER, purchase_price REAL, sale_price REAL, stock_quantity REAL, min_stock REAL, FOREIGN KEY(unit_id) REFERENCES units(id))",
+            "CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, phone TEXT, address TEXT, balance REAL DEFAULT 0)",
+            "CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, sale_date TEXT, total_amount REAL, amount_paid REAL, payment_status TEXT, user_id INTEGER, FOREIGN KEY(customer_id) REFERENCES customers(id))",
+            "CREATE TABLE IF NOT EXISTS sale_items (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER, product_id INTEGER, quantity REAL, unit_price REAL, total_price REAL, FOREIGN KEY(sale_id) REFERENCES sales(id), FOREIGN KEY(product_id) REFERENCES products(id))",
+            "CREATE TABLE IF NOT EXISTS business_settings (id INTEGER PRIMARY KEY CHECK (id = 1), name TEXT, slogan TEXT, phone1 TEXT, phone2 TEXT, salesman_name TEXT, logo BLOB)",
+            "CREATE TABLE IF NOT EXISTS installments (id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER, customer_id INTEGER, amount REAL, due_date TEXT, payment_date TEXT, is_paid INTEGER DEFAULT 0, FOREIGN KEY(sale_id) REFERENCES sales(id), FOREIGN KEY(customer_id) REFERENCES customers(id))"
+        };
 
+        try (Statement stmt = connection.createStatement()) {
+            for (String sql : tables) {
+                stmt.execute(sql);
+            }
+            initializeDefaultData(stmt);
+        } catch (SQLException e) {
+            System.err.println("Table Creation Error: " + e.getMessage());
+        }
+    }
+    private void ensureTableStructureIsUpdated() {
+        // مثال لمستقبل التطبيق: إذا أردت إضافة عمود رقم الهاتف الثاني لجدول المستخدمين
+        // checkAndAddColumn("users", "phone_secondary", "TEXT DEFAULT ''");
+    }
+    
+    public final void connect() {
+        try {
+            if (URL == null) {
+                initializeDatabasePath(); // تأمين إضافي لضمان عدم وجود URL فارغ
+            }
+            if (connection == null || connection.isClosed()) {
+                connection = DriverManager.getConnection(URL);
+            }
+        } catch (SQLException e) {
+            System.err.println("Connection Error: " + e.getMessage());
+        }
+    }
+    
+    private void checkAndAddColumn(String tableName, String columnName, String columnType) {
+        try (Statement stmt = connection.createStatement()) {
+            ResultSet rs = connection.getMetaData().getColumns(null, null, tableName, columnName);
+            if (!rs.next()) {
+                stmt.execute("ALTER TABLE " + tableName + " ADD COLUMN " + columnName + " " + columnType);
+                System.out.println("Maintenance: Added column " + columnName + " to " + tableName);
+            }
+        } catch (SQLException e) {
+            System.err.println("Column Update Error: " + e.getMessage());
+        }
+    }
+ 
+    private void initializeDefaultData(Statement stmt) throws SQLException {
+        ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM units");
+        if (rs.next() && rs.getInt(1) == 0) {
+            String[] defaultUnits = {"قطعة", "كرتون", "كيلو", "متر", "علبة"};
+            for (String unit : defaultUnits) {
+                stmt.execute("INSERT INTO units (name) VALUES ('" + unit + "')");
+            }
+            System.out.println("تم إضافة الوحدات الافتراضية.");
+        }
+        
+        rs = stmt.executeQuery("SELECT COUNT(*) FROM users");
+        if (rs.next() && rs.getInt(1) == 0) {
+            stmt.execute("INSERT INTO users (username, password, role) VALUES ('admin', 'admin123', 'super_admin')");
+            System.out.println("تم إضافة المستخدم المسؤول الافتراضي.");
+        }
+    }
+    
     private void ensureColumnsExist() {
         try (Statement stmt = connection.createStatement()) {
             // إضافة عمود paid_amount لجدول المبيعات إذا لم يكن موجوداً stmt.execute("ALTER TABLE sales ADD COLUMN paid_amount REAL DEFAULT 0") ;
@@ -529,21 +645,6 @@ boolean checkLogin(String user, String pass) {
         } catch (SQLException e) { System.err.println("Error deleting product: " + e.getMessage()); return false; }
     }
 
-    /*
-    public boolean checkUserCredentials(String username, String password) {
-        String sql = "SELECT * FROM users WHERE username = ? AND password = ?";
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, username);
-            pstmt.setString(2, password); 
-            try (ResultSet rs = pstmt.executeQuery()) {
-                return rs.next(); // يرجع true إذا وجد مستخدم مطابق
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-            return false;
-        }
-    }
-*/
     public boolean addUser(String username, String password, String role) {
         String sql = "INSERT INTO users(username, password, role) VALUES(?, ?, ?)";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
@@ -569,8 +670,7 @@ boolean checkLogin(String user, String pass) {
         return true;
     }
 
-    // غيّر نوع الإرجاع من List<String[]> إلى List<User>
-public List<User> getAllUsers() {
+    public List<User> getAllUsers() {
     List<User> users = new ArrayList<>();
     try (Statement stmt = connection.createStatement();
          ResultSet rs = stmt.executeQuery("SELECT id, username, role FROM users")) {
@@ -584,7 +684,6 @@ public List<User> getAllUsers() {
     } catch (SQLException e) { e.printStackTrace(); }
     return users;
 }
-
 
     public boolean deleteUser(int id) {
         try (PreparedStatement pstmt = connection.prepareStatement("DELETE FROM users WHERE id = ?")) {
@@ -616,7 +715,7 @@ public List<User> getAllUsers() {
         return 0.0;
     }
 
- public List<List<Object>> getAllSaleTransactions() {
+    public List<List<Object>> getAllSaleTransactions() {
     List<List<Object>> list = new ArrayList<>();
     
     // هذا الاستعلام يطبق المنطق الذي طلبته بالضبط:
@@ -658,7 +757,6 @@ public List<User> getAllUsers() {
     return list;
 }
 
-    // دالة مساعدة
     private double getInstallmentsTotal(int saleId) {
         try (PreparedStatement pstmt = connection.prepareStatement("SELECT SUM(amount) FROM Installments WHERE sale_id = ?")) {
             pstmt.setInt(1, saleId);
@@ -667,9 +765,7 @@ public List<User> getAllUsers() {
         } catch (SQLException e) { return 0; }
         return 0;
     }
-
-
-    // أضف هذه الدالة في DatabaseManager.java
+    
     public double getRealSaleTotal(int saleId) {
         // هذه الدالة تحسب الإجمالي الحقيقي للفاتورة الواحدة
         // المعادلة: المقدم (amount_paid) + مجموع الأقساط (installments)
@@ -700,8 +796,7 @@ public List<User> getAllUsers() {
         return 0.0;
     }
 
-    // دالة مساعدة لحساب الإجمالي الحقيقي
-     private double calculateRealTotal(int saleId, double originalTotal) {
+    private double calculateRealTotal(int saleId, double originalTotal) {
             // نحسب مجموع الأقساط لهذه البيعة
             double installmentsSum = 0;
             try (PreparedStatement pstmt = connection.prepareStatement("SELECT SUM(amount) FROM Installments WHERE sale_id = ?")) {
@@ -758,7 +853,6 @@ public List<User> getAllUsers() {
             // دعنا نجرب استخدام مجموع SaleItems كحل بديل وموثوق
             return productsTotal > 0 ? productsTotal : originalTotal;
         }
-
 
     public List<Object> getSaleDetails(int saleId) {
         String sql = "SELECT s.id, s.sale_date, s.customer_id, s.customer_name, s.total_amount, s.amount_paid, c.balance " +
@@ -1081,6 +1175,7 @@ public List<User> getAllUsers() {
             return false ;
         }
     }
+    
     public static class User {
     public final int id;
     public final String username;
@@ -1098,7 +1193,6 @@ public List<User> getAllUsers() {
     }
 }
 
-    
     public String getUserRole(String username) {
     String role = null;
     try {
@@ -1164,14 +1258,7 @@ public List<User> getAllUsers() {
         } catch (SQLException e) { System.err.println("Error checking customer name existence: " + e.getMessage()); }
         return false;
     }
-/*
-    public void close() {
-        try { 
-            if (connection != null) connection.close(); 
-        } catch (SQLException e) {
-            System.err.println("Error closing connectionection: " + e.getMessage()); }
-    }
-    */
+
     public void close() {
     try {
         if (connection != null && !connection.isClosed()) {
@@ -1183,7 +1270,6 @@ public List<User> getAllUsers() {
     }
 }
 
-    
     private void checkAndCreateTables() {
     try (Statement stmt = connection.createStatement()) {
         // إنشاء الجداول الأساسية
@@ -1206,8 +1292,6 @@ public List<User> getAllUsers() {
     }
 }
 
-
-    
     public List<Customer> getAllCustomersForPOS() {
     List<Customer> list = new ArrayList<>() ;
     // --- بداية التعديل ---
@@ -1251,10 +1335,6 @@ public List<User> getAllUsers() {
         return list;
     }
 
-        // ... أضف هذا السطر داخل مصفوفة الجداول في دالة createNewTables ...
-
-
-       // الكلاس المحدث (يستقبل 6 متغيرات الآن)
     public static class BusinessInfo {
         public String name;
         public String slogan;
@@ -1274,8 +1354,6 @@ public List<User> getAllUsers() {
         }
     }
 
-
-        // 1. دالة الحفظ (المصححة)
     public boolean saveBusinessInfo(String name, String slogan, String phone1, String phone2, String salesman, byte[] logoBytes) {
         // تم إضافة salesman في أسماء الأعمدة والقيم
         String sql = "REPLACE INTO app_settings (id, company_name, slogan, phone1, phone2, salesman, logo) VALUES (1, ?, ?, ?, ?, ?, ?)";
@@ -1294,7 +1372,6 @@ public List<User> getAllUsers() {
         }
     }
 
-    // 2. دالة الجلب (المصححة)
     public BusinessInfo getBusinessInfo() {
         String sql = "SELECT * FROM app_settings WHERE id = 1";
         try (Statement stmt = connection.createStatement();
@@ -1314,16 +1391,15 @@ public List<User> getAllUsers() {
         }
         return null;
     }
-// 1. التحقق هل البيع تقسيط أم لا
-public boolean isInstallmentSale(int saleId) {
+
+   public boolean isInstallmentSale(int saleId) {
     try (PreparedStatement pstmt = connection.prepareStatement("SELECT 1 FROM installments WHERE sale_id = ? LIMIT 1")) {
         pstmt.setInt(1, saleId);
         try (ResultSet rs = pstmt.executeQuery()) { return rs.next(); }
     } catch (SQLException e) { return false; }
 }
 
-// 2. جلب قيمة المقدم
-public double getSaleDownPayment(int saleId) {
+    public double getSaleDownPayment(int saleId) {
     try (PreparedStatement pstmt = connection.prepareStatement("SELECT amount_paid FROM Sales WHERE id = ?")) {
         pstmt.setInt(1, saleId);
         try (ResultSet rs = pstmt.executeQuery()) { if(rs.next()) return rs.getDouble(1); }
@@ -1331,8 +1407,7 @@ public double getSaleDownPayment(int saleId) {
     return 0.0;
 }
 
-// 3. جلب أقساط بيعة معينة
-public List<Installment> getInstallmentsBySaleId(int saleId) {
+   public List<Installment> getInstallmentsBySaleId(int saleId) {
     List<Installment> list = new ArrayList<>();
     String sql = "SELECT id, sale_id, customer_id, amount, due_date, payment_date, is_paid FROM installments WHERE sale_id = ? ORDER BY due_date";
     try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
@@ -1349,5 +1424,4 @@ public List<Installment> getInstallmentsBySaleId(int saleId) {
     return list;
 }
 
-    
 }

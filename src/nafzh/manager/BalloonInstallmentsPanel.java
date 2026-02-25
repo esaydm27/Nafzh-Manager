@@ -11,6 +11,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.List;
+
 import static nafzh.manager.NafzhManager.getCairoFont;
 
 public class BalloonInstallmentsPanel extends JPanel {

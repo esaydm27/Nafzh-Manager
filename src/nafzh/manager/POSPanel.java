@@ -3,13 +3,13 @@ package nafzh.manager;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.TableColumn;
 import java.awt.*;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.math.BigDecimal;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -17,7 +17,6 @@ import java.util.Map;
 
 import nafzh.manager.DatabaseManager.ProductForPOS;
 import static nafzh.manager.NafzhManager.getCairoFont;
-
 
 public class POSPanel extends JPanel {
 
@@ -85,14 +84,22 @@ public class POSPanel extends JPanel {
 
         searchTable = new JTable(searchModel);
         customizeTable(searchTable);
-        searchTable.getColumnModel().getColumn(1).setPreferredWidth(250);
+        
+        // --- إخفاء الأعمدة المطلوبة في جدول البحث ---
+        hideColumn(searchTable, 0); // إخفاء ID
+        hideColumn(searchTable, 2); // إخفاء السعر
+        hideColumn(searchTable, 3); // إخفاء متبقي
+        
+        searchTable.getColumnModel().getColumn(1).setPreferredWidth(300); // توسيع اسم الصنف
 
         searchTable.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
                 if (e.getClickCount() == 2 && searchTable.getSelectedRow() != -1) {
                     int row = searchTable.getSelectedRow();
-                    if ((int) searchModel.getValueAt(row, 3) > 0) {
+                    // الوصول للبيانات المخفية يتم عبر الموديل بشكل طبيعي
+                    int stock = (int) searchModel.getValueAt(row, 3);
+                    if (stock > 0) {
                         addItemToCart((int) searchModel.getValueAt(row, 0), 1);
                     } else {
                         JOptionPane.showMessageDialog(POSPanel.this, "هذا الصنف غير متوفر بالمخزون.", "نفد المخزون", JOptionPane.WARNING_MESSAGE);
@@ -104,7 +111,8 @@ public class POSPanel extends JPanel {
         searchPanel.add(searchField, BorderLayout.NORTH);
         searchPanel.add(new JScrollPane(searchTable), BorderLayout.CENTER);
 
-        gbc.gridx = 0; gbc.gridy = 0; gbc.weightx = 1.0; gbc.weighty = 0.4;
+        // إعطاء وزن أكبر للبحث لتصغير السلة
+        gbc.gridx = 0; gbc.gridy = 0; gbc.weightx = 0.3; gbc.weighty = 1.0;
         add(searchPanel, gbc);
 
         // --- لوحة السلة ---
@@ -121,6 +129,11 @@ public class POSPanel extends JPanel {
 
         cartTable = new JTable(cartModel);
         customizeTable(cartTable);
+        
+        // تقليل عرض أعمدة السلة للتحكم في المساحة الكلية
+        cartTable.getColumnModel().getColumn(0).setPreferredWidth(30);  // ID
+        cartTable.getColumnModel().getColumn(3).setPreferredWidth(50);  // الكمية
+        cartTable.getColumnModel().getColumn(2).setPreferredWidth(60);  // الوحدة
 
         cartModel.addTableModelListener(e -> {
             if (e.getType() == javax.swing.event.TableModelEvent.UPDATE && e.getColumn() == 3) {
@@ -138,7 +151,7 @@ public class POSPanel extends JPanel {
 
         cartPanel.add(new JScrollPane(cartTable), BorderLayout.CENTER);
 
-        // --- اللوحة السفلية (الأزرار والإجمالي) ---
+        // --- اللوحة السفلية ---
         JPanel southCartPanel = new JPanel(new BorderLayout());
         southCartPanel.setOpaque(false);
 
@@ -147,7 +160,8 @@ public class POSPanel extends JPanel {
         grandTotalLabel.setFont(getCairoFont(16f));
         totalPanel.add(grandTotalLabel);
 
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        // استخدام GridLayout للأزرار لجعلها متراصة ومنظمة في مساحة ضيقة
+        JPanel buttonPanel = new JPanel(new GridLayout(2, 3, 5, 5)); 
 
         JButton fetchSelectedButton = createStyledButton("جلب التحديد", new Color(25, 118, 210));
         fetchSelectedButton.addActionListener(e -> fetchSelectedToCart());
@@ -164,43 +178,40 @@ public class POSPanel extends JPanel {
         JButton checkoutButton = createStyledButton("إتمام البيع", new Color(76, 175, 80));
         checkoutButton.addActionListener(e -> handleCheckout());
 
-        
-        
-        // الزر الجديد: بيع تقسيط
-        JButton installmentButton = new JButton("بيع تقسيط");
-        installmentButton.setFont(getCairoFont(11f));
-        installmentButton.setBackground(new Color(155, 89, 182)); 
-        installmentButton.setForeground(Color.BLACK);
+        JButton installmentButton = createStyledButton("بيع تقسيط", new Color(155, 89, 182));
         installmentButton.addActionListener(e -> openInstallmentDialog());
-        
-       
-       
-       
         
         buttonPanel.add(fetchSelectedButton);
         buttonPanel.add(calculateQuantityButton);
         buttonPanel.add(removeButton);
         buttonPanel.add(clearButton);
+        buttonPanel.add(installmentButton);
         buttonPanel.add(checkoutButton);
-        buttonPanel.add(installmentButton) ;
-        buttonPanel.add(checkoutButton) ;
         
-       
-        
-        southCartPanel.add(totalPanel, BorderLayout.EAST);
-        southCartPanel.add(buttonPanel, BorderLayout.WEST);
+        southCartPanel.add(totalPanel, BorderLayout.NORTH);
+        southCartPanel.add(buttonPanel, BorderLayout.CENTER);
         cartPanel.add(southCartPanel, BorderLayout.SOUTH);
 
-        gbc.gridy = 1; gbc.weighty = 0.6;
+        // هنا تقليل weightx لجعل عرض لوحة السلة أصغر (0.3 مقابل 0.7 للبحث)
+        gbc.gridx = 1; gbc.gridy = 0; gbc.weightx = 0.7; gbc.weighty = 1.0;
         add(cartPanel, gbc);
     }
     
-    // دالة مساعدة لإنشاء الأزرار بنفس الستايل لتقليل التكرار
+    // دالة مخصصة لإخفاء الأعمدة برمجياً
+    private void hideColumn(JTable table, int columnIndex) {
+        TableColumn column = table.getColumnModel().getColumn(columnIndex);
+        column.setMinWidth(0);
+        column.setMaxWidth(0);
+        column.setPreferredWidth(0);
+        column.setResizable(false);
+    }
+
     private JButton createStyledButton(String text, Color bg) {
         JButton btn = new JButton(text);
         btn.setBackground(bg);
-        btn.setForeground(Color.BLACK); // أو الأبيض حسب التباين
+        btn.setForeground(Color.BLACK);
         btn.setFont(getCairoFont(10f));
+        btn.setMargin(new Insets(2, 2, 2, 2));
         return btn;
     }
 
@@ -233,7 +244,8 @@ public class POSPanel extends JPanel {
     private void fetchSelectedToCart() {
         for (int i = searchModel.getRowCount() - 1; i >= 0; i--) {
             if (Boolean.TRUE.equals(searchModel.getValueAt(i, 4))) {
-                if ((int) searchModel.getValueAt(i, 3) > 0) {
+                int stock = (int) searchModel.getValueAt(i, 3);
+                if (stock > 0) {
                     addItemToCart((int) searchModel.getValueAt(i, 0), 1);
                 }
             }
@@ -309,18 +321,14 @@ public class POSPanel extends JPanel {
         grandTotalLabel.setText(String.format("الإجمالي الكلي: %.2f ج.م.", grandTotal));
     }
 
-        // دالة مساعدة لاستخراج البيانات من جدول JTable بدقة (مع الوحدة)
     private List<SaleItem> getCartItems() {
         List<SaleItem> items = new ArrayList<>();
-        // نعتمد على بيانات الجدول لأنها تحتوي على كل التفاصيل المعروضة (بما فيها الوحدة)
         for (int i = 0; i < cartModel.getRowCount(); i++) {
             int productId = (int) cartModel.getValueAt(i, 0);
             String productName = (String) cartModel.getValueAt(i, 1);
-            String unit = (String) cartModel.getValueAt(i, 2); // التقاط الوحدة
+            String unit = (String) cartModel.getValueAt(i, 2);
             int quantity = Integer.parseInt(cartModel.getValueAt(i, 3).toString());
             double price = Double.parseDouble(cartModel.getValueAt(i, 4).toString());
-            
-            // استخدام الكونستركتور الجديد الذي يقبل الوحدة
             items.add(new SaleItem(productId, productName, unit, quantity, price)); 
         }
         return items;
@@ -336,39 +344,28 @@ public class POSPanel extends JPanel {
     }
 
     private void handleCheckout() {
-        System.out.println("--- [تتبع] بدء عملية إتمام البيع ---");
-
         if (cartDetails.isEmpty()) {
             JOptionPane.showMessageDialog(this, "سلة المبيعات فارغة.", "تنبيه", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
-        // 1. فتح نافذة الدفع
         Frame parent = (Frame) SwingUtilities.getWindowAncestor(this);
-        // نمرر الـ grandTotal المحسوب مسبقاً في POSPanel
         PaymentDialog paymentDialog = new PaymentDialog(parent, new BigDecimal(grandTotal));
         paymentDialog.setVisible(true);
 
-        // 2. التحقق من التأكيد
         if (paymentDialog.isSaleConfirmed()) {
-            System.out.println("[تتبع] تم تأكيد الدفع.");
-
-            // 3. جمع البيانات
             Customer selectedCustomer = paymentDialog.getSelectedCustomer();
             BigDecimal amountPaid = paymentDialog.getAmountPaid();
             
-            // تحديد المعرف والاسم (مهم جداً للتعديل الأخير)
             int customerId = (selectedCustomer != null) ? selectedCustomer.getId() : 0;
             String customerName = (selectedCustomer != null) ? selectedCustomer.getName() : "عميل نقدي";
 
-            // 4. تحويل السلة لقائمة أصناف (باستخدام الدالة المساعدة الصحيحة)
             List<SaleItem> saleItems = getCartItems();
 
-            // 5. الحفظ عبر SalesDAO (بالتوقيع الجديد الكامل)
             SalesDAO salesDAO = new SalesDAO();
             boolean success = salesDAO.saveSaleTransaction(
                 customerId, 
-                customerName, // تمرير الاسم
+                customerName, 
                 grandTotal, 
                 amountPaid.doubleValue(), 
                 saleItems
@@ -376,19 +373,14 @@ public class POSPanel extends JPanel {
 
             if (success) {
                 JOptionPane.showMessageDialog(this, "تمت عملية البيع بنجاح!", "نجاح", JOptionPane.INFORMATION_MESSAGE);
-                
                 clearCart();
                 parentFrame.updateDashboardData();
                 parentFrame.updateInventoryDisplay();
-                System.out.println("[تتبع] تم التحديث بنجاح.");
             } else {
                 JOptionPane.showMessageDialog(this, "فشل حفظ الفاتورة!", "خطأ", JOptionPane.ERROR_MESSAGE);
             }
-        } else {
-            System.out.println("[تتبع] تم إلغاء العملية.");
         }
     }
-
 
     public void clearCart() {
         cartDetails.clear();

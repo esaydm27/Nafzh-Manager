@@ -15,7 +15,6 @@ import javax.imageio.ImageIO;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.awt.FileDialog;
 import java.nio.file.StandardCopyOption;
 import javax.swing.JFileChooser;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -49,6 +48,10 @@ public class NafzhManager extends JFrame {
     private static final String INSTALLMENTS_PANEL = "Installments"; // اسم اللوحة الجديد
     private final int BASE_WIDTH = 1300;
     
+    // هذا المتغير الجديد سيحتوي على الـ JScrollPane الخاص بالـ Sidebar
+    private JScrollPane sidebarScrollPane;
+
+
     public NafzhManager() {
         setTitle("Nafzh Manager | نظام إدارة المؤسسات المتكامل");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -80,7 +83,8 @@ public class NafzhManager extends JFrame {
         // --- 1. إعداد القائمة الجانبية (Sidebar) ---
         JPanel sidebar = new JPanel();
         sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
-        sidebar.setPreferredSize(new Dimension(230, getHeight())); // عرض مناسب
+        // بدلاً من تحديد PreferredSize للـ sidebar نفسه، سنحدده للـ Viewport في الـ JScrollPane
+        // sidebar.setPreferredSize(new Dimension(230, getHeight())); // إزالة أو تعديل هذا السطر
         sidebar.setBackground(new Color(45, 62, 80));
         sidebar.setBorder(BorderFactory.createEmptyBorder(15, 5, 15, 5));
         
@@ -99,7 +103,10 @@ public class NafzhManager extends JFrame {
         // أ. حاوية الاسم (لضمان التوسيط الأفقي التام)
         JPanel namePanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         namePanel.setOpaque(false);
-        namePanel.setMaximumSize(new Dimension(230, 70)); // ارتفاع ثابت للاسم
+        // **التعديل هنا:** MAX_VALUE للعرض للسماح بالتوسع، مع الحفاظ على الارتفاع
+        namePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 70));
+        // **التعديل هنا:** محاذاة اللوحة نفسها في الـ BoxLayout
+        namePanel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         JLabel titleLabel = new JLabel("<html><div style='text-align: center; width: 200px;'>" + companyName + "</div></html>");
         titleLabel.setFont(getCairoFont(20f).deriveFont(Font.BOLD));
@@ -111,7 +118,10 @@ public class NafzhManager extends JFrame {
         if (!slogan.isEmpty()) {
             JPanel sloganPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
             sloganPanel.setOpaque(false);
-            sloganPanel.setMaximumSize(new Dimension(230, 30));
+            // **التعديل هنا:** MAX_VALUE للعرض
+            sloganPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+            // **التعديل هنا:** محاذاة اللوحة نفسها
+            sloganPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
             JLabel sloganLabel = new JLabel(slogan);
             sloganLabel.setFont(getCairoFont(11f));
@@ -125,7 +135,10 @@ public class NafzhManager extends JFrame {
         // ج. حاوية اللوجو
         JPanel logoPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         logoPanel.setOpaque(false);
-        logoPanel.setMaximumSize(new Dimension(230, 120)); // مساحة للصورة
+        // **التعديل هنا:** MAX_VALUE للعرض
+        logoPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 120));
+        // **التعديل هنا:** محاذاة اللوحة نفسها
+        logoPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         if (info != null && info.logoBytes != null) {
             ImageIcon originalIcon = new ImageIcon(info.logoBytes);
@@ -161,7 +174,7 @@ public class NafzhManager extends JFrame {
         customersButton = createSidebarButton("عمـلاء المؤسسة", CUSTOMERS_PANEL);
         installmentsButton = createSidebarButton("إدارة الأقساط", INSTALLMENTS_PANEL);
 
-        // إضافة الأزرار مع الفواصل
+        // إضافة الأزرار مع الفواصل (ميزة setAlignmentX موجودة داخل createSidebarButton)
         sidebar.add(dashboardButton);
         sidebar.add(Box.createRigidArea(new Dimension(0, 8)));
         sidebar.add(inventoryButton);
@@ -180,7 +193,11 @@ public class NafzhManager extends JFrame {
         // --- 3. تذييل القائمة (لوجو المطور) ---
         JPanel developerPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         developerPanel.setOpaque(false);
-        developerPanel.setMaximumSize(new Dimension(230, 80));
+        // **التعديل هنا:** MAX_VALUE للعرض
+        developerPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
+        // **التعديل هنا:** محاذاة اللوحة نفسها
+        developerPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
 
         try {
             java.net.URL iconUrl = getClass().getResource("/resources/image/logomo.png");
@@ -224,7 +241,16 @@ public class NafzhManager extends JFrame {
 
         // --- 5. تجميع الإطار الرئيسي ---
         getContentPane().setLayout(new BorderLayout());
-        getContentPane().add(sidebar, BorderLayout.EAST);
+        
+        // **التعديل الجديد هنا**: نغلف الـ sidebar بـ JScrollPane
+        sidebarScrollPane = new JScrollPane(sidebar);
+        sidebarScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER); // لا نحتاج شريط تمرير أفقي
+        sidebarScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED); // شريط تمرير رأسي عند الحاجة
+        sidebarScrollPane.setBorder(BorderFactory.createEmptyBorder()); // إزالة الحدود الافتراضية
+        // يمكننا ضبط العرض المفضل هنا لـ Viewport (المنطقة التي يظهر فيها الـ sidebar)
+        sidebarScrollPane.setPreferredSize(new Dimension(230, getHeight()));
+
+        getContentPane().add(sidebarScrollPane, BorderLayout.EAST); // إضافة الـ JScrollPane بدلاً من الـ sidebar مباشرة
 
         // شريط العنوان العلوي وزر القائمة
         JButton toggleSidebarBtn = new JButton("☰");
@@ -248,7 +274,8 @@ public class NafzhManager extends JFrame {
         // --- 6. الأحداث (Listeners) ---
         toggleSidebarBtn.addActionListener(e -> {
             sidebarVisible = !sidebarVisible;
-            sidebar.setVisible(sidebarVisible);
+            // **تعديل**: نتحكم في رؤية الـ JScrollPane بأكمله
+            sidebarScrollPane.setVisible(sidebarVisible); 
             revalidate();
             repaint();
         });
@@ -414,19 +441,11 @@ public static void setCurrentRole(String role) {
         JMenuItem refreshItem = new JMenuItem("تحديث بيانات الصفحة الحالية");
 
         toggleSidebarItem.addActionListener(e -> {
-            JPanel sidebar = null;
-            Container contentPane = getContentPane();
-            LayoutManager layout = contentPane.getLayout();
-            if (layout instanceof BorderLayout) {
-                Component eastComponent = ((BorderLayout) layout).getLayoutComponent(BorderLayout.EAST);
-                if (eastComponent instanceof JPanel) sidebar = (JPanel) eastComponent;
-            }
-            if (sidebar != null) {
-                sidebarVisible = !sidebar.isVisible();
-                sidebar.setVisible(sidebarVisible);
-                revalidate();
-                repaint();
-            }
+            // **تعديل**: الآن نتحكم في رؤية الـ JScrollPane
+            sidebarVisible = !sidebarScrollPane.isVisible();
+            sidebarScrollPane.setVisible(sidebarVisible);
+            revalidate();
+            repaint();
         });
 
         refreshItem.addActionListener(e -> {
@@ -573,7 +592,7 @@ public static void setCurrentRole(String role) {
             File dest = new File("inventory.db");
 
             // حماية إضافية: التأكد أنه ملف قاعدة بيانات فعلاً
-            if (!source.getName().endsWith(".db")) {
+            if (!source.getName().toLowerCase().endsWith(".db")) {
                 JOptionPane.showMessageDialog(this, "الرجاء اختيار ملف قاعدة بيانات صحيح (.db)", "ملف غير صالح", JOptionPane.WARNING_MESSAGE);
                 return;
             }
@@ -868,6 +887,7 @@ private class UserSwitchDialog extends JDialog {
 
     }
 
+
     private JButton createSidebarButton(String text, String actionCommand) {
         JButton button = new JButton("<html><div dir='rtl' style='text-align: right;'>" + text + "</div></html>");
         button.setActionCommand(actionCommand);
@@ -879,8 +899,11 @@ private class UserSwitchDialog extends JDialog {
         button.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
         button.setHorizontalAlignment(SwingConstants.CENTER);
+        // **
+        button.setMaximumSize(new Dimension(Integer.MAX_VALUE, button.getPreferredSize().height));
         return button;
     }
+
 
     public void updateDashboardData() {
         if (dashboardPanelInstance != null) {
