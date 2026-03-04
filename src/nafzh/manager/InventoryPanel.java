@@ -5,11 +5,15 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumn;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import static nafzh.manager.NafzhManager.getCairoFont;
 import nafzh.manager.TableActionRendererEditor.ActionType;
 
@@ -20,24 +24,21 @@ public class InventoryPanel extends JPanel {
     private JTable inventoryTable;
     private ExpandableInventoryTableModel tableModel;
     private List<Map<String, Object>> productsData;
+    private List<Map<String, Object>> allProductsRawData; // لتخزين البيانات الأصلية للبحث
+    private JTextField searchField; // شريط البحث
 
     private static final int ACTION_COL_INDEX = 7;
-    // توحيد لون الشبكة (الزيتوني)
     private static final Color GRID_COLOR = new Color(189, 195, 49); 
 
-    // --- أيقونة السهم للأسفل (v) عند التوسيع ---
     private static final Icon ARROW_DOWN = new Icon() {
         @Override public void paintIcon(Component c, Graphics g, int x, int y) {
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g2.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
             g2.setColor(new Color(80, 80, 80)); 
-            
-            int w = 10;
-            int h = 6;
+            int w = 10; int h = 6;
             int xStart = x + (getIconWidth() - w)/2;
             int yStart = y + (getIconHeight() - h)/2;
-            
             g2.drawLine(xStart, yStart, xStart + w/2, yStart + h);
             g2.drawLine(xStart + w/2, yStart + h, xStart + w, yStart);
             g2.dispose();
@@ -46,19 +47,15 @@ public class InventoryPanel extends JPanel {
         @Override public int getIconHeight() { return 20; }
     };
 
-    // --- أيقونة السهم لليسار (<) عند الطي ---
     private static final Icon ARROW_LEFT = new Icon() {
         @Override public void paintIcon(Component c, Graphics g, int x, int y) {
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g2.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
             g2.setColor(new Color(80, 80, 80));
-            
-            int w = 6;
-            int h = 10;
+            int w = 6; int h = 10;
             int xStart = x + (getIconWidth() - w)/2;
             int yStart = y + (getIconHeight() - h)/2;
-            
             g2.drawLine(xStart + w, yStart, xStart, yStart + h/2);
             g2.drawLine(xStart, yStart + h/2, xStart + w, yStart + h);
             g2.dispose();
@@ -81,14 +78,33 @@ public class InventoryPanel extends JPanel {
         setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         setName("Inventory");
 
-        // --- العنوان والزر ---
+        // --- الجزء العلوي (العنوان + البحث + الزر) ---
+        JPanel northPanel = new JPanel(new BorderLayout(15, 0));
+        northPanel.setOpaque(false);
+        northPanel.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+
         JLabel titleLabel = new JLabel("إدارة المخزون والأصناف", SwingConstants.RIGHT);
         titleLabel.setFont(getCairoFont(21f));
         titleLabel.setForeground(new Color(50, 50, 50));
-
-        JPanel northPanel = new JPanel(new BorderLayout());
-        northPanel.setOpaque(false);
         northPanel.add(titleLabel, BorderLayout.EAST);
+
+        // حاوية الأزرار والبحث في اليسار
+        JPanel leftActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 0));
+        leftActions.setOpaque(false);
+
+        // إعداد شريط البحث بنفس ستايل العملاء
+        searchField = new JTextField(20);
+        searchField.setFont(getCairoFont(12));
+        searchField.setPreferredSize(new Dimension(200, 35));
+        searchField.setHorizontalAlignment(JTextField.RIGHT);
+        searchField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        searchField.setToolTipText("ابحث باسم الصنف، الفئة أو ID...");
+        
+        searchField.getDocument().addDocumentListener(new DocumentListener() {
+            public void insertUpdate(DocumentEvent e) { filterInventory(); }
+            public void removeUpdate(DocumentEvent e) { filterInventory(); }
+            public void changedUpdate(DocumentEvent e) { filterInventory(); }
+        });
 
         JButton addButton = new JButton("إضافة صنف");
         addButton.setFont(getCairoFont(12f));
@@ -99,7 +115,10 @@ public class InventoryPanel extends JPanel {
         addButton.setBorder(BorderFactory.createEmptyBorder(8, 20, 8, 20));
         addButton.addActionListener(e -> showProductDialog(null));
 
-        northPanel.add(addButton, BorderLayout.WEST);
+        leftActions.add(searchField);
+        leftActions.add(addButton);
+        northPanel.add(leftActions, BorderLayout.WEST);
+
         add(northPanel, BorderLayout.NORTH);
 
         // --- الجدول ---
@@ -112,11 +131,9 @@ public class InventoryPanel extends JPanel {
             public void mouseClicked(MouseEvent e) {
                 int row = inventoryTable.rowAtPoint(e.getPoint());
                 int col = inventoryTable.columnAtPoint(e.getPoint());
-                
                 if (row >= 0 && col == 0) {
                     String category = (String) tableModel.getValueAt(row, 0);
                     String prevCategory = (row > 0) ? (String) tableModel.getValueAt(row - 1, 0) : "";
-                    
                     if (!category.equals(prevCategory)) {
                         tableModel.toggleExpandState(category);
                     }
@@ -131,25 +148,26 @@ public class InventoryPanel extends JPanel {
     }
 
     public void loadInventoryData() {
-        productsData = dbManager.getAllProducts();
+        allProductsRawData = dbManager.getAllProducts();
         
-        // ترتيب البيانات حسب الفئة
-        productsData.sort((p1, p2) -> {
+        // ترتيب البيانات
+        allProductsRawData.sort((p1, p2) -> {
             String c1 = (String) p1.get("category");
             String c2 = (String) p2.get("category");
             return c1.compareTo(c2);
         });
 
-        // --- تحديث: إخفاء سعر الشراء حسب الدور الحالي ---
+        // حماية أسعار الشراء
         String currentRole = NafzhManager.getCurrentRole();
-        for (Map<String, Object> product : productsData) {
-            // إذا كان المستخدم ليس super_admin، نخفي سعر الشراء
+        for (Map<String, Object> product : allProductsRawData) {
             if (!"super_admin".equals(currentRole)) {
                 product.put("purchase_price", "******");
             }
         }
 
+        productsData = new ArrayList<>(allProductsRawData);
         tableModel = new ExpandableInventoryTableModel(productsData);
+        
         if (inventoryTable != null) {
             inventoryTable.setModel(tableModel);
             customizeTable(inventoryTable);
@@ -158,6 +176,23 @@ public class InventoryPanel extends JPanel {
         parentFrame.updateDashboardData();
     }
 
+    private void filterInventory() {
+        String text = searchField.getText().trim().toLowerCase();
+        if (text.isEmpty()) {
+            productsData = new ArrayList<>(allProductsRawData);
+        } else {
+            productsData = allProductsRawData.stream()
+                .filter(p -> p.get("name").toString().toLowerCase().contains(text) || 
+                             p.get("category").toString().toLowerCase().contains(text) ||
+                             p.get("id").toString().contains(text))
+                .collect(Collectors.toList());
+        }
+        
+        tableModel = new ExpandableInventoryTableModel(productsData);
+        inventoryTable.setModel(tableModel);
+        customizeTable(inventoryTable);
+        setupActionColumn();
+    }
 
     private void customizeTable(JTable table) {
         table.setRowHeight(45); 
@@ -167,7 +202,6 @@ public class InventoryPanel extends JPanel {
         table.setIntercellSpacing(new Dimension(0, 0));
         table.setBackground(Color.WHITE);
 
-        // --- تنسيق الهيدر ---
         JTableHeader header = table.getTableHeader();
         header.setFont(getCairoFont(12f).deriveFont(Font.BOLD));
         header.setBackground(new Color(240, 240, 240));
@@ -188,32 +222,26 @@ public class InventoryPanel extends JPanel {
             }
         };
 
-        // --- الريندر المجمع (Group Renderer) ---
         DefaultTableCellRenderer groupingRenderer = new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
                 JLabel l = (JLabel) super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-                
                 String currentCategory = (String) table.getValueAt(row, 0);
                 String prevCategory = (row > 0) ? (String) table.getValueAt(row - 1, 0) : "";
                 String nextCategory = (row < table.getRowCount() - 1) ? (String) table.getValueAt(row + 1, 0) : "";
-                
                 boolean isStartOfGroup = !currentCategory.equals(prevCategory);
                 boolean isEndOfGroup = !currentCategory.equals(nextCategory);
                 
-                if (column == 0) { // عمود الفئة
+                if (column == 0) {
                     l.setHorizontalAlignment(JLabel.RIGHT); 
                     l.setHorizontalTextPosition(SwingConstants.LEFT);
                     l.setFont(getCairoFont(13f).deriveFont(Font.BOLD));
                     l.setForeground(new Color(41, 128, 185)); 
-                    
                     if (isStartOfGroup) {
                         l.setText(currentCategory);
                         if (tableModel.hasMoreProducts(currentCategory)) {
                             l.setIcon(tableModel.isExpanded(currentCategory) ? ARROW_DOWN : ARROW_LEFT);
-                        } else {
-                            l.setIcon(null);
-                        }
+                        } else { l.setIcon(null); }
                         l.setBackground(new Color(250, 250, 250));
                         l.setOpaque(true);
                         l.setBorder(BorderFactory.createCompoundBorder(
@@ -221,13 +249,11 @@ public class InventoryPanel extends JPanel {
                              BorderFactory.createEmptyBorder(0, 10, 0, 0)
                         ));
                     } else {
-                        l.setText("");
-                        l.setIcon(null);
-                        l.setBackground(Color.WHITE);
-                        l.setOpaque(true);
+                        l.setText(""); l.setIcon(null);
+                        l.setBackground(Color.WHITE); l.setOpaque(true);
                         l.setBorder(BorderFactory.createMatteBorder(0, 0, isEndOfGroup ? 1 : 0, 1, GRID_COLOR));
                     }
-                } else { // باقي الأعمدة
+                } else {
                     l.setHorizontalAlignment(JLabel.CENTER);
                     l.setForeground(Color.BLACK);
                     l.setIcon(null);
@@ -285,7 +311,6 @@ public class InventoryPanel extends JPanel {
     private void showProductDialog(Map<String, Object> existingData) {
         boolean isEdit = (existingData != null);
         String currentRole = NafzhManager.getCurrentRole();
-        
         JDialog dialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), isEdit ? "تعديل صنف" : "إضافة صنف جديد", true);
         dialog.setSize(400, 650); 
         dialog.setResizable(false);
@@ -300,19 +325,12 @@ public class InventoryPanel extends JPanel {
 
         String nameVal = isEdit ? (String) existingData.get("name") : "";
         String catVal = isEdit ? (String) existingData.get("category") : "";
-        String unitVal = isEdit && existingData.containsKey("unit") ? (String) existingData.get("unit") : "قطعة";
+        String unitVal = (isEdit && existingData.containsKey("unit")) ? (String) existingData.get("unit") : "قطعة";
         String qtyVal = isEdit ? String.valueOf(existingData.get("current_quantity")) : "0";
-        
-        // منطق إخفاء السعر في مربع الحوار عند التعديل
         String purchVal = "0.0";
         if (isEdit) {
-            if (!"super_admin".equals(currentRole)) {
-                purchVal = "******";
-            } else {
-                purchVal = String.valueOf(existingData.get("purchase_price"));
-            }
+            purchVal = (!"super_admin".equals(currentRole)) ? "******" : String.valueOf(existingData.get("purchase_price"));
         }
-        
         String saleVal = isEdit ? String.valueOf(existingData.get("sale_price")) : "0.0";
 
         MaterialTextField txtName = new MaterialTextField("اسم الصنف", nameVal);
@@ -322,7 +340,6 @@ public class InventoryPanel extends JPanel {
         MaterialTextField txtPurch = new MaterialTextField("سعر الشراء", purchVal);
         MaterialTextField txtSale = new MaterialTextField("سعر البيع", saleVal);
 
-        // تعطيل حقل سعر الشراء إذا لم يكن المستخدم super_admin في حالة التعديل
         if (isEdit && !"super_admin".equals(currentRole)) {
             txtPurch.getTextField().setEditable(false);
         }
@@ -346,23 +363,18 @@ public class InventoryPanel extends JPanel {
             try {
                 String name = txtName.getText().trim();
                 if (name.isEmpty()) { JOptionPane.showMessageDialog(dialog, "الاسم مطلوب"); return; }
-                
                 JComboBox<String> catCombo = (JComboBox<String>) ((JPanel) categoryPanel.getComponent(1)).getComponent(0);
                 String cat = (String) catCombo.getSelectedItem();
                 JComboBox<String> unitCombo = (JComboBox<String>) ((JPanel) unitPanel.getComponent(1)).getComponent(0);
                 String unit = (String) unitCombo.getSelectedItem();
                 int qty = Integer.parseInt(txtQty.getText().trim());
-                
                 double sPrice = Double.parseDouble(txtSale.getText().trim());
                 double pPrice;
-                
-                // إذا كان السعر مشفراً، نأخذ القيمة القديمة من البيانات الأصلية
                 if (isEdit && txtPurch.getText().equals("******")) {
                     pPrice = Double.parseDouble(existingData.get("purchase_price").toString());
                 } else {
                     pPrice = Double.parseDouble(txtPurch.getText().trim());
                 }
-
                 if (isEdit) {
                     dbManager.updateProduct((int) existingData.get("id"), name, cat, unit, qty, pPrice, sPrice);
                 } else {
@@ -374,7 +386,6 @@ public class InventoryPanel extends JPanel {
                 JOptionPane.showMessageDialog(dialog, "يرجى إدخال أرقام صحيحة");
             }
         });
-
         panel.add(btnSave);
         dialog.add(panel, BorderLayout.CENTER);
         dialog.setVisible(true);
@@ -384,37 +395,27 @@ public class InventoryPanel extends JPanel {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBackground(Color.WHITE);
         panel.setBorder(BorderFactory.createEmptyBorder(5, 0, 5, 0));
-        
         JLabel label = new JLabel(labelText);
         label.setFont(getCairoFont(11));
         label.setForeground(Color.GRAY);
         label.setHorizontalAlignment(JLabel.RIGHT);
-        
         JPanel comboContainer = new JPanel(new BorderLayout(5, 0)); 
         comboContainer.setBackground(Color.WHITE);
-        
         JComboBox<String> comboBox = new JComboBox<>(items);
         comboBox.setEditable(true); 
         comboBox.setFont(getCairoFont(13));
         if (selectedItem != null) comboBox.setSelectedItem(selectedItem);
-        
         Component editorComponent = comboBox.getEditor().getEditorComponent();
-        if (editorComponent instanceof JTextField) {
-            ((JTextField) editorComponent).setHorizontalAlignment(JTextField.RIGHT);
-        }
-        
+        if (editorComponent instanceof JTextField) { ((JTextField) editorComponent).setHorizontalAlignment(JTextField.RIGHT); }
         comboBox.setRenderer(new DefaultListCellRenderer() {
-            @Override
-            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+            @Override public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
                 JLabel lbl = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
                 lbl.setHorizontalAlignment(SwingConstants.RIGHT);
                 lbl.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
                 return lbl;
             }
         });
-
         comboContainer.add(comboBox, BorderLayout.CENTER);
-
         if (hasAddButton) {
             JButton btnAdd = new JButton("+");
             btnAdd.setFont(new Font("Arial", Font.BOLD, 14));
@@ -424,20 +425,15 @@ public class InventoryPanel extends JPanel {
                 String newItem = JOptionPane.showInputDialog(parentDialog, "أدخل اسم " + labelText + " الجديدة:");
                 if (newItem != null && !newItem.trim().isEmpty()) {
                     boolean success = labelText.equals("الفئة") ? dbManager.addCategory(newItem.trim()) : true;
-                    if (success) {
-                        comboBox.addItem(newItem.trim());
-                        comboBox.setSelectedItem(newItem.trim());
-                    }
+                    if (success) { comboBox.addItem(newItem.trim()); comboBox.setSelectedItem(newItem.trim()); }
                 }
             });
             comboContainer.add(btnAdd, BorderLayout.WEST); 
         }
-        
         comboContainer.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createMatteBorder(0, 0, 1, 0, Color.GRAY),
             BorderFactory.createEmptyBorder(5, 5, 5, 5)
         ));
-
         panel.add(label, BorderLayout.NORTH);
         panel.add(comboContainer, BorderLayout.CENTER);
         return panel;
@@ -450,8 +446,7 @@ public class InventoryPanel extends JPanel {
             setBackground(Color.WHITE);
             setBorder(BorderFactory.createEmptyBorder(5, 0, 5, 0));
             JLabel label = new JLabel(labelText);
-            label.setFont(getCairoFont(11));
-            label.setForeground(Color.GRAY);
+            label.setFont(getCairoFont(11)); label.setForeground(Color.GRAY);
             label.setHorizontalAlignment(JLabel.RIGHT);
             textField = new JTextField(initialText);
             textField.setFont(getCairoFont(13));
